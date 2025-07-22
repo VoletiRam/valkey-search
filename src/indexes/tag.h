@@ -114,7 +114,7 @@ class Tag : public IndexBase {
   };
 
   virtual std::unique_ptr<EntriesFetcher> Search(
-      const query::TagPredicate& predicate,
+      const valkey_search::query::TagPredicate& predicate,
       bool negate) const ABSL_NO_THREAD_SAFETY_ANALYSIS;
   char GetSeparator() const { return separator_; }
   bool IsCaseSensitive() const { return case_sensitive_; }

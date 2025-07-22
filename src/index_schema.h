@@ -95,6 +95,12 @@ class IndexSchema : public KeyspaceEventSubscription,
   }
 
   inline const std::string &GetName() const { return name_; }
+  inline const std::string &GetPunctuation() const { return punctuation_; }
+  inline bool GetWithOffsets() const { return with_offsets_; }
+  inline const std::vector<std::string> &GetStopWords() const { return stop_words_; }
+  inline data_model::Language GetTextLanguage() const { return proto_.language(); }
+  inline bool GetNostem() const { return nostem_; }
+  inline std::uint32_t GetMinStemSize() const { return min_stem_size_; }
   inline std::uint32_t GetDBNum() const { return db_num_; }
 
   bool GetSavePositions() const { return save_positions_; }
@@ -173,9 +179,16 @@ class IndexSchema : public KeyspaceEventSubscription,
   std::vector<std::string> subscribed_key_prefixes_;
   std::unique_ptr<AttributeDataType> attribute_data_type_;
   std::string name_;
+  std::string punctuation_;
+  bool with_offsets_;
+  std::vector<std::string> stop_words_;
+  data_model::Language language_;
+  bool nostem_;
+  uint32_t min_stem_size_;
   uint32_t db_num_{0};
   bool save_positions_{true};
   size_t num_text_fields_{0};
+  data_model::IndexSchema proto_;
 
   vmsdk::ThreadPool *mutations_thread_pool_{nullptr};
   InternedStringMap<DocumentMutation> tracked_mutated_records_

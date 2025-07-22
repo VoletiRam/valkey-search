@@ -56,6 +56,16 @@ const absl::string_view kSeparatorParam{"SEPARATOR"};
 const absl::string_view kCaseSensitiveParam{"CASESENSITIVE"};
 const absl::string_view kScoreParam{"SCORE"};
 constexpr absl::string_view kSchemaParam{"SCHEMA"};
+// Text-specific parameters
+constexpr absl::string_view kPunctuationParam{"PUNCTUATION"};
+constexpr absl::string_view kWithOffsetsParam{"WITHOFFSETS"};
+constexpr absl::string_view kNoOffsetsParam{"NOOFFSETS"};
+constexpr absl::string_view kStopWordsParam{"STOPWORDS"};
+constexpr absl::string_view kNoStopWordsParam{"NOSTOPWORDS"};
+constexpr absl::string_view kNoStemParam{"NOSTEM"};
+constexpr absl::string_view kWithSuffixTrieParam{"WITHSUFFIXTRIE"};
+constexpr absl::string_view kNoSuffixTrieParam{"NOSUFFIXTRIE"};
+constexpr absl::string_view kMinStemSizeParam{"MINSTEMSIZE"};
 constexpr size_t kDefaultAttributesCountLimit{50};
 constexpr int kDefaultDimensionsCountLimit{32768};
 constexpr int kDefaultPrefixesCountLimit{8};
@@ -183,11 +193,320 @@ static auto default_timeout_ms =
 
 const absl::NoDestructor<
     absl::flat_hash_map<absl::string_view, data_model::Language>>
-    kLanguageByStr({{"ENGLISH", data_model::LANGUAGE_ENGLISH}});
+    kLanguageByStr({
+        {"NONE", data_model::LANGUAGE_UNSPECIFIED},
+        {"ARABIC", data_model::LANGUAGE_ENGLISH},  // Placeholder - actual Arabic support needed
+        {"ARMENIAN", data_model::LANGUAGE_ENGLISH},  // Placeholder
+        {"BASQUE", data_model::LANGUAGE_ENGLISH},    // Placeholder
+        {"CATALAN", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"DANISH", data_model::LANGUAGE_ENGLISH},    // Placeholder
+        {"DUTCH", data_model::LANGUAGE_ENGLISH},     // Placeholder
+        {"ENGLISH", data_model::LANGUAGE_ENGLISH},
+        {"ESTONIAN", data_model::LANGUAGE_ENGLISH},  // Placeholder
+        {"FINNISH", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"FRENCH", data_model::LANGUAGE_ENGLISH},    // Placeholder
+        {"GERMAN", data_model::LANGUAGE_ENGLISH},    // Placeholder
+        {"GREEK", data_model::LANGUAGE_ENGLISH},     // Placeholder
+        {"HINDI", data_model::LANGUAGE_ENGLISH},     // Placeholder
+        {"HUNGARIAN", data_model::LANGUAGE_ENGLISH}, // Placeholder
+        {"INDONESIAN", data_model::LANGUAGE_ENGLISH}, // Placeholder
+        {"IRISH", data_model::LANGUAGE_ENGLISH},     // Placeholder
+        {"ITALIAN", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"LITHUANIAN", data_model::LANGUAGE_ENGLISH}, // Placeholder
+        {"NEPALI", data_model::LANGUAGE_ENGLISH},    // Placeholder
+        {"NORWEGIAN", data_model::LANGUAGE_ENGLISH}, // Placeholder
+        {"PORTER", data_model::LANGUAGE_ENGLISH},    // Placeholder
+        {"PORTUGUESE", data_model::LANGUAGE_ENGLISH}, // Placeholder
+        {"ROMANIAN", data_model::LANGUAGE_ENGLISH},  // Placeholder
+        {"RUSSIAN", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"SCRIPTS", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"SERBIAN", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"SPANISH", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"SWEDISH", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"TAMIL", data_model::LANGUAGE_ENGLISH},     // Placeholder
+        {"TURKISH", data_model::LANGUAGE_ENGLISH},   // Placeholder
+        {"YIDDISH", data_model::LANGUAGE_ENGLISH}    // Placeholder
+    });
 const absl::NoDestructor<
     absl::flat_hash_map<absl::string_view, data_model::AttributeDataType>>
     kOnDataTypeByStr({{"HASH", data_model::ATTRIBUTE_DATA_TYPE_HASH},
                       {"JSON", data_model::ATTRIBUTE_DATA_TYPE_JSON}});
+
+// Default stop words from RFC
+const absl::NoDestructor<std::vector<std::string>> kDefaultStopWords({
+    "a", "is", "the", "an", "and", "are", "as", "at", "be", "but", "by", "for",
+    "if", "in", "into", "it", "no", "not", "of", "on", "or", "such", "that", "their",
+    "then", "there", "these", "they", "this", "to", "was", "will", "with"
+});
+
+// Default punctuation characters
+constexpr absl::string_view kDefaultPunctuation{" \t\n\r!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"};
+constexpr uint32_t kDefaultMinStemSize{4};
+
+// Text field parsing parameters structure
+struct FTCreateTextParameters {
+  bool suffix_tree = false;
+  bool nostem = false;
+  uint32_t min_stem_size = kDefaultMinStemSize;
+};
+
+vmsdk::KeyValueParser<FTCreateTextParameters> CreateTextParser() {
+  vmsdk::KeyValueParser<FTCreateTextParameters> parser;
+  parser.AddParamParser(kWithSuffixTrieParam,
+                        GENERATE_FLAG_PARSER(FTCreateTextParameters, suffix_tree));
+  parser.AddParamParser(kNoStemParam,
+                        GENERATE_FLAG_PARSER(FTCreateTextParameters, nostem));
+  parser.AddParamParser(kMinStemSizeParam,
+                        GENERATE_VALUE_PARSER(FTCreateTextParameters, min_stem_size));
+  return parser;
+}
+
+absl::Status ParseText(vmsdk::ArgsIterator &itr, data_model::Index &index_proto) {
+  auto text_index_proto = std::make_unique<data_model::TextIndex>();
+  
+  // Set RFC defaults first
+  text_index_proto->set_suffix_tree(false);
+  
+  static auto parser = CreateTextParser();
+  FTCreateTextParameters parameters;
+  VMSDK_RETURN_IF_ERROR(parser.Parse(parameters, itr, false));
+  
+  // Apply parsed parameters to proto
+  text_index_proto->set_suffix_tree(parameters.suffix_tree);
+  text_index_proto->set_nostem(parameters.nostem);
+  text_index_proto->set_min_stem_size(parameters.min_stem_size);
+  
+  index_proto.set_allocated_text_index(text_index_proto.release());
+  return absl::OkStatus();
+}
+
+absl::Status ParseTextIndexOptions(vmsdk::ArgsIterator &itr,
+                                   data_model::IndexSchema &index_schema_proto) {
+  // Set defaults first
+  index_schema_proto.set_punctuation(std::string(kDefaultPunctuation));
+  index_schema_proto.set_with_offsets(true);  // Default is WITHOFFSETS
+  index_schema_proto.set_language(data_model::LANGUAGE_ENGLISH);
+  index_schema_proto.set_nostem(false);
+  index_schema_proto.set_min_stem_size(kDefaultMinStemSize);  // Default min stem size
+  
+  // Set default stop words
+  for (const auto& word : *kDefaultStopWords) {
+    index_schema_proto.add_stop_words(word);
+  }
+  
+  // Track conflicting options
+  bool has_withoffsets = false;
+  bool has_nooffsets = false;
+  bool has_nostopwords = false;
+  bool has_stopwords = false;
+  bool has_nostem = false;
+  bool has_language = false;
+  bool has_min_stem_size = false;
+  
+  // Parse options in a loop until we hit SCHEMA or end
+  while (itr.HasNext()) {
+    absl::string_view current_param;
+    VMSDK_ASSIGN_OR_RETURN(auto param_arg, itr.Get());
+    current_param = vmsdk::ToStringView(param_arg);
+    
+    // Check if we've reached SCHEMA - if so, stop parsing text options
+    if (absl::EqualsIgnoreCase(current_param, kSchemaParam)) {
+      break;
+    }
+    
+    // Parse PUNCTUATION
+    if (absl::EqualsIgnoreCase(current_param, kPunctuationParam)) {
+      itr.Next();  // consume PUNCTUATION
+      if (!itr.HasNext()) {
+        return absl::InvalidArgumentError("PUNCTUATION requires a value");
+      }
+      VMSDK_ASSIGN_OR_RETURN(auto value_arg, itr.Get());
+      std::string punctuation_str = std::string(vmsdk::ToStringView(value_arg));
+      
+      // Handle quoted strings - remove surrounding quotes if present
+      if (punctuation_str.length() >= 2 && 
+          ((punctuation_str.front() == '"' && punctuation_str.back() == '"') ||
+           (punctuation_str.front() == '\'' && punctuation_str.back() == '\''))) {
+        punctuation_str = punctuation_str.substr(1, punctuation_str.length() - 2);
+      }
+      
+      if (punctuation_str.empty()) {
+        return absl::InvalidArgumentError("PUNCTUATION cannot be empty");
+      }
+      index_schema_proto.set_punctuation(punctuation_str);
+      itr.Next();  // consume value
+      continue;
+    }
+    
+    // Parse WITHOFFSETS
+    if (absl::EqualsIgnoreCase(current_param, kWithOffsetsParam)) {
+      if (has_nooffsets) {
+        return absl::InvalidArgumentError("Cannot specify both WITHOFFSETS and NOOFFSETS");
+      }
+      has_withoffsets = true;
+      index_schema_proto.set_with_offsets(true);
+      itr.Next();
+      continue;
+    }
+    
+    // Parse NOOFFSETS  
+    if (absl::EqualsIgnoreCase(current_param, kNoOffsetsParam)) {
+      if (has_withoffsets) {
+        return absl::InvalidArgumentError("Cannot specify both WITHOFFSETS and NOOFFSETS");
+      }
+      has_nooffsets = true;
+      index_schema_proto.set_with_offsets(false);
+      itr.Next();
+      continue;
+    }
+    
+    // Parse NOSTOPWORDS
+    if (absl::EqualsIgnoreCase(current_param, kNoStopWordsParam)) {
+      if (has_stopwords) {
+        return absl::InvalidArgumentError("Cannot specify both NOSTOPWORDS and STOPWORDS");
+      }
+      has_nostopwords = true;
+      index_schema_proto.clear_stop_words();
+      itr.Next();
+      continue;
+    }
+    
+    // Parse STOPWORDS
+    if (absl::EqualsIgnoreCase(current_param, kStopWordsParam)) {
+      if (has_nostopwords) {
+        return absl::InvalidArgumentError("Cannot specify both NOSTOPWORDS and STOPWORDS");
+      }
+      has_stopwords = true;
+      
+      itr.Next();  // consume STOPWORDS
+      if (!itr.HasNext()) {
+        return absl::InvalidArgumentError("STOPWORDS requires a count");
+      }
+      VMSDK_ASSIGN_OR_RETURN(auto count_arg, itr.Get());
+      std::string count_str = std::string(vmsdk::ToStringView(count_arg));
+      
+      // Validate negative numbers before parsing
+      if (!count_str.empty() && count_str[0] == '-') {
+        return absl::InvalidArgumentError("STOPWORDS count cannot be negative");
+      }
+      
+      uint32_t stopwords_count;
+      try {
+        stopwords_count = std::stoul(count_str);
+      } catch (...) {
+        return absl::InvalidArgumentError("STOPWORDS count must be a number");
+      }
+      itr.Next();  // consume count
+      
+      index_schema_proto.clear_stop_words();
+      if (stopwords_count > 0) {
+        // Count actual stop words available (not including SCHEMA and beyond)
+        uint32_t available_words = 0;
+        auto temp_itr = itr;  // Create temporary iterator to peek ahead
+        while (temp_itr.HasNext() && available_words < stopwords_count) {
+          VMSDK_ASSIGN_OR_RETURN(auto word_arg, temp_itr.Get());
+          absl::string_view word_str = vmsdk::ToStringView(word_arg);
+          // Stop counting if we hit SCHEMA keyword
+          if (absl::EqualsIgnoreCase(word_str, kSchemaParam)) {
+            break;
+          }
+          available_words++;
+          temp_itr.Next();
+        }
+        
+        if (stopwords_count > available_words) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Expected ", stopwords_count, " stop words but got ",
+                           available_words, " remaining arguments."));
+        }
+        
+        for (uint32_t i = 0; i < stopwords_count; ++i) {
+          VMSDK_ASSIGN_OR_RETURN(auto word_arg, itr.Get());
+          index_schema_proto.add_stop_words(std::string(vmsdk::ToStringView(word_arg)));
+          itr.Next();
+        }
+      }
+      continue;
+    }
+    
+    // Parse NOSTEM
+    if (absl::EqualsIgnoreCase(current_param, kNoStemParam)) {
+      if (has_language) {
+        return absl::InvalidArgumentError("Cannot specify both NOSTEM and LANGUAGE");
+      }
+      has_nostem = true;
+      index_schema_proto.set_nostem(true);
+      index_schema_proto.set_language(data_model::LANGUAGE_UNSPECIFIED);
+      itr.Next();
+      continue;
+    }
+    
+    // Parse LANGUAGE
+    if (absl::EqualsIgnoreCase(current_param, kLanguageParam)) {
+      if (has_nostem) {
+        return absl::InvalidArgumentError("Cannot specify both NOSTEM and LANGUAGE");
+      }
+      has_language = true;
+      
+      itr.Next();  // consume LANGUAGE
+      if (!itr.HasNext()) {
+        return absl::InvalidArgumentError("LANGUAGE requires a value");
+      }
+      VMSDK_ASSIGN_OR_RETURN(auto lang_arg, itr.Get());
+      std::string lang_str = std::string(vmsdk::ToStringView(lang_arg));
+      absl::AsciiStrToUpper(&lang_str);
+      
+      auto lang_it = kLanguageByStr->find(lang_str);
+      if (lang_it != kLanguageByStr->end()) {
+        index_schema_proto.set_language(lang_it->second);
+        index_schema_proto.set_nostem(false);
+      } else {
+        return absl::InvalidArgumentError(absl::StrCat("Unknown language: ", lang_str));
+      }
+      itr.Next();  // consume language value
+      continue;
+    }
+    
+    // Parse MINSTEMSIZE
+    if (absl::EqualsIgnoreCase(current_param, kMinStemSizeParam)) {
+      has_min_stem_size = true;
+      
+      itr.Next();  // consume MINSTEMSIZE
+      if (!itr.HasNext()) {
+        return absl::InvalidArgumentError("MINSTEMSIZE requires a value");
+      }
+      
+      VMSDK_ASSIGN_OR_RETURN(auto value_arg, itr.Get());
+      std::string value_str = std::string(vmsdk::ToStringView(value_arg));
+      
+      // Validate negative numbers before parsing
+      if (!value_str.empty() && value_str[0] == '-') {
+        return absl::InvalidArgumentError("MINSTEMSIZE cannot be negative");
+      }
+      
+      uint32_t min_stem_size;
+      try {
+        min_stem_size = std::stoul(value_str);
+      } catch (...) {
+        return absl::InvalidArgumentError("MINSTEMSIZE must be a number");
+      }
+      
+      if (min_stem_size == 0) {
+        return absl::InvalidArgumentError("MINSTEMSIZE must be greater than 0");
+      }
+      
+      index_schema_proto.set_min_stem_size(min_stem_size);
+      itr.Next();  // consume value
+      continue;
+    }
+    
+    // If we get here, this parameter is not a text option, so stop parsing
+    break;
+  }
+  
+  return absl::OkStatus();
+}
+
 absl::Status ParsePrefixes(vmsdk::ArgsIterator &itr,
                            data_model::IndexSchema &index_schema_proto) {
   uint32_t prefixes_cnt{0};
@@ -401,6 +720,8 @@ absl::StatusOr<data_model::Attribute *> ParseAttributeArgs(
   } else if (index_type == indexes::IndexerType::kNumeric) {
     VMSDK_RETURN_IF_ERROR(
         ParseNumeric(itr, *index_proto, attribute_identifier));
+  } else if (index_type == indexes::IndexerType::kText) {
+    VMSDK_RETURN_IF_ERROR(ParseText(itr, *index_proto));
   } else {
     CHECK(false);
   }
@@ -413,6 +734,17 @@ bool HasVectorIndex(const data_model::IndexSchema &index_schema_proto) {
     const auto &index = attribute.index();
     if (index.index_type_case() ==
         data_model::Index::IndexTypeCase::kVectorIndex) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool HasTextIndex(const data_model::IndexSchema &index_schema_proto) {
+  for (const auto &attribute : index_schema_proto.attributes()) {
+    const auto &index = attribute.index();
+    if (index.index_type_case() ==
+        data_model::Index::IndexTypeCase::kTextIndex) {
       return true;
     }
   }
@@ -454,6 +786,10 @@ absl::StatusOr<data_model::IndexSchema> ParseFTCreateArgs(
     return absl::InvalidArgumentError(
         NotSupportedParamErrorMsg(kPayloadFieldParam));
   }
+  
+  // Parse per-index text processing options before SCHEMA
+  VMSDK_RETURN_IF_ERROR(ParseTextIndexOptions(itr, index_schema_proto));
+  
   absl::string_view schema;
   VMSDK_RETURN_IF_ERROR(vmsdk::ParseParamValue(itr, schema));
   if (!absl::EqualsIgnoreCase(schema, kSchemaParam)) {

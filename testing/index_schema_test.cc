@@ -33,6 +33,7 @@
 #include "src/indexes/index_base.h"
 #include "src/indexes/numeric.h"
 #include "src/indexes/tag.h"
+#include "src/indexes/text.h"
 #include "src/indexes/vector_flat.h"
 #include "src/indexes/vector_hnsw.h"
 #include "src/keyspace_event_manager.h"
@@ -1199,6 +1200,16 @@ TEST_F(IndexSchemaRDBTest, SaveAndLoad) ABSL_NO_THREAD_SAFETY_ANALYSIS {
     VMSDK_EXPECT_OK(index_schema->AddIndex("flat_attribute", "flat_identifier",
                                            flat_index));
 
+    // Add TEXT index to test RDB serialization
+    auto text_index_proto = std::make_unique<data_model::TextIndex>();
+    text_index_proto->set_suffix_tree(true);
+    text_index_proto->set_nostem(false);
+    text_index_proto->set_min_stem_size(4);
+    
+    auto text_index = std::make_shared<indexes::Text>(*text_index_proto);
+    VMSDK_EXPECT_OK(index_schema->AddIndex("text_attribute", "text_identifier",
+                                           text_index));
+
     VMSDK_EXPECT_OK(index_schema->RDBSave(&rdb_stream));
   }
 
@@ -1244,6 +1255,13 @@ TEST_F(IndexSchemaRDBTest, SaveAndLoad) ABSL_NO_THREAD_SAFETY_ANALYSIS {
                   flat_index->GetSpace()) != nullptr);
   EXPECT_EQ(flat_index->GetCapacity(), initial_cap);
   EXPECT_EQ(flat_index->GetBlockSize(), block_size);
+
+  // Validate TEXT index loads correctly
+  VMSDK_EXPECT_OK(index_schema->GetIndex("text_attribute"));
+  auto text_index = dynamic_cast<indexes::Text *>(
+      index_schema->GetIndex("text_attribute").value().get());
+  EXPECT_TRUE(text_index != nullptr);
+  // TEXT index should exist and be properly constructed
 
   EXPECT_TRUE(index_schema->IsBackfillInProgress());
   EXPECT_EQ(index_schema->GetStats().document_cnt, 10);

@@ -30,12 +30,125 @@
 #ifndef VALKEYSEARCH_SRC_INDEXES_TEXT_H_
 #define VALKEYSEARCH_SRC_INDEXES_TEXT_H_
 
+#include "absl/base/thread_annotations.h"
+#include "absl/synchronization/mutex.h"
+#include <concepts>
+#include <memory>
+#include <optional>
+
+#include "absl/functional/any_invocable.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
+#include "src/indexes/index_base.h"
+#include "src/index_schema.pb.h"
+#include "src/indexes/text_index.h"
+#include "src/rdb_serialization.h"
+#include "src/utils/string_interning.h"
+#include "vmsdk/src/valkey_module_api/valkey_module.h"
+
+// Forward declaration
+namespace valkey_search::indexes {
+enum class DeletionType;
+enum class IndexerType;
+}
+
+namespace valkey_search {
+namespace text {
+
+using Byte = uint8_t;
+using Char = uint32_t;
+
+struct TextFieldIndex {
+    TextFieldIndex(const data_model::TextIndex& text_index_proto,
+                 const data_model::IndexSchema* index_schema_proto = nullptr,
+                 std::string field_identifier = "") 
+      : text_index_proto_(text_index_proto),
+        index_schema_proto_(index_schema_proto),
+        field_identifier_(field_identifier),
+    text_ = std::make_shared<TextIndex>();
+  }
+
+  // Return the field identifier
+  const std::string& GetFieldIdentifier() const {
+    return field_identifier_;
+  }
+  ~TextFieldIndex() = default;
+
+  absl::StatusOr<bool> AddRecord(const InternedStringPtr& key,
+                                 absl::string_view data);
+  absl::StatusOr<bool> RemoveRecord(const InternedStringPtr& key,
+                                    indexes::DeletionType deletion_type) {
+    return false; // Placeholder 
+  }
+  absl::StatusOr<bool> ModifyRecord(const InternedStringPtr& key,
+                                    absl::string_view data) {
+    return false; // Placeholder 
+  }
+  int RespondWithInfo(ValkeyModuleCtx* ctx) const {
+    return 0; // Placeholder 
+  }
+  bool IsTracked(const InternedStringPtr& key) const {
+    return false; // Placeholder 
+  }
+  absl::Status SaveIndex(RDBChunkOutputStream chunked_out) const {
+    return absl::OkStatus(); // Placeholder 
+  }
+
+  std::unique_ptr<data_model::Index> ToProto() const {
+    auto index_proto = std::make_unique<data_model::Index>();
+    index_proto->mutable_text_index();
+    return index_proto;
+  }
+  void ForEachTrackedKey(
+      absl::AnyInvocable<void(const InternedStringPtr&)> fn) const {
+    // Placeholder 
+  }
+
+  uint64_t GetRecordCount() const {
+    return 0; // Placeholder 
+  }
+
+ private:
+  // Each text field is assigned a unique number within the containing index
+  size_t text_field_number = 0;
+  // The per-index text index
+  std::shared_ptr<TextIndex> text_;
+  // Store references to configuration protos
+  const data_model::TextIndex& text_index_proto_;
+  const data_model::IndexSchema* index_schema_proto_;
+  // Field identifier (name or alias)
+  std::string field_identifier_;
+};
+
+
+}  // namespace text
+}  // namespace valkey_search
 
 namespace valkey_search::indexes {
 
+// Forward declarations
+namespace query { class TextPredicate; }
+
+/**
+ * Text index implementation that satisfies the IndexBase interface.
+ * 
+ * This class serves as the boundary between the generic index interface that 
+ * the core search system interacts with and the specialized text processing logic.
+ * It follows the delegation pattern used consistently across all index types
+ * (Tag, Numeric, Vector, etc.) where:
+ * 
+ * 1. The core system interacts only with IndexBase implementations
+ * 2. This class provides thread safety guarantees via index_mutex_
+ * 3. The actual specialized text processing is delegated to TextFieldIndex
+ * 
+ * This separation allows the core system to operate with a consistent interface
+ * while keeping specialized text processing implementation details encapsulated.
+ */
 class Text : public IndexBase {
  public:
-  explicit Text(const data_model::TextIndex& text_index_proto);
+  explicit Text(const data_model::TextIndex& text_index_proto, 
+                const data_model::IndexSchema* index_schema_proto = nullptr);
   absl::StatusOr<bool> AddRecord(const InternedStringPtr& key,
                                  absl::string_view data) override
       ABSL_LOCKS_EXCLUDED(index_mutex_);
@@ -46,9 +159,9 @@ class Text : public IndexBase {
   absl::StatusOr<bool> ModifyRecord(const InternedStringPtr& key,
                                     absl::string_view data) override
       ABSL_LOCKS_EXCLUDED(index_mutex_);
-  int RespondWithInfo(RedisModuleCtx* ctx) const override;
+  int RespondWithInfo(ValkeyModuleCtx* ctx) const override;
   bool IsTracked(const InternedStringPtr& key) const override;
-  absl::Status SaveIndex(RDBOutputStream& rdb_stream) const override {
+  absl::Status SaveIndex(RDBChunkOutputStream chunked_out) const override {
     return absl::OkStatus();
   }
 
@@ -56,15 +169,13 @@ class Text : public IndexBase {
   // Each text field is assigned a unique number within the containing index, this is used
   // by the Postings object to identify fields.
   size_t text_field_number;
-  std::shared_ptr<TextIndex> text_;
+  std::shared_ptr<text::TextIndex> text_;
 
 
   inline void ForEachTrackedKey(
       absl::AnyInvocable<void(const InternedStringPtr&)> fn) const override {
-    absl::MutexLock lock(&index_mutex_);
-    for (const auto& [key, _] : tracked_tags_by_keys_) {
-      fn(key);
-    }
+    // No-op placeholder until text index implementation is complete
+    // Text indexing functionality will be implemented later
   }
   uint64_t GetRecordCount() const override;
   std::unique_ptr<data_model::Index> ToProto() const override;
@@ -95,6 +206,8 @@ class Text : public IndexBase {
 
  private:
   mutable absl::Mutex index_mutex_;
+  // TODO: Text subsystem implementation will be integrated here
+  std::unique_ptr<text::TextFieldIndex> text_impl_;
 };
 }  // namespace valkey_search::indexes
 

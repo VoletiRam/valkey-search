@@ -36,6 +36,7 @@
 #include "src/indexes/index_base.h"
 #include "src/indexes/numeric.h"
 #include "src/indexes/tag.h"
+#include "src/indexes/text.h"
 #include "src/indexes/vector_base.h"
 #include "src/indexes/vector_flat.h"
 #include "src/indexes/vector_hnsw.h"
@@ -81,6 +82,23 @@ absl::StatusOr<std::shared_ptr<indexes::IndexBase>> IndexFactory(
     }
     case data_model::Index::IndexTypeCase::kNumericIndex: {
       return std::make_shared<indexes::Numeric>(index.numeric_index());
+    }
+    case data_model::Index::IndexTypeCase::kTextIndex: {
+      // Create a temporary IndexSchema proto with all schema settings
+      auto temp_schema_proto = std::make_unique<data_model::IndexSchema>();
+      temp_schema_proto->set_punctuation(index_schema->GetPunctuation());
+      temp_schema_proto->set_with_offsets(index_schema->GetWithOffsets());
+      for (const auto& stop_word : index_schema->GetStopWords()) {
+        temp_schema_proto->add_stop_words(stop_word);
+      }
+      temp_schema_proto->set_language(index_schema->GetTextLanguage());
+      temp_schema_proto->set_nostem(index_schema->GetNostem());
+      temp_schema_proto->set_min_stem_size(index_schema->GetMinStemSize());
+      
+      // Set name to the attribute's identifier to pass field information down to TextFieldIndex
+      temp_schema_proto->set_name(attribute.identifier());
+      
+      return std::make_shared<indexes::Text>(index.text_index(), temp_schema_proto.get());
     }
     case data_model::Index::IndexTypeCase::kVectorIndex: {
       switch (index.vector_index().algorithm_case()) {
@@ -195,7 +213,13 @@ IndexSchema::IndexSchema(ValkeyModuleCtx *ctx,
       keyspace_event_manager_(&KeyspaceEventManager::Instance()),
       attribute_data_type_(std::move(attribute_data_type)),
       name_(std::string(index_schema_proto.name())),
+      punctuation_(index_schema_proto.punctuation()),
+      with_offsets_(index_schema_proto.with_offsets()),
+      stop_words_(index_schema_proto.stop_words().begin(), index_schema_proto.stop_words().end()),
+      nostem_(index_schema_proto.nostem()),
+      min_stem_size_(index_schema_proto.min_stem_size()),
       db_num_(index_schema_proto.db_num()),
+      proto_(index_schema_proto),
       mutations_thread_pool_(mutations_thread_pool),
       time_sliced_mutex_(CreateMrmwMutexOptions()) {
   ValkeyModule_SelectDb(detached_ctx_.get(), db_num_);
@@ -781,6 +805,17 @@ std::unique_ptr<data_model::IndexSchema> IndexSchema::ToProto() const {
   index_schema_proto->mutable_subscribed_key_prefixes()->Add(
       subscribed_key_prefixes_.begin(), subscribed_key_prefixes_.end());
   index_schema_proto->set_attribute_data_type(attribute_data_type_->ToProto());
+  
+  // Set text processing options
+  index_schema_proto->set_punctuation(punctuation_);
+  index_schema_proto->set_with_offsets(with_offsets_);
+  for (const auto& stop_word : stop_words_) {
+    index_schema_proto->add_stop_words(stop_word);
+  }
+  index_schema_proto->set_language(proto_.language());
+  index_schema_proto->set_nostem(nostem_);
+  index_schema_proto->set_min_stem_size(min_stem_size_);
+  
   auto stats = index_schema_proto->mutable_stats();
   stats->set_documents_count(stats_.document_cnt);
   std::transform(
