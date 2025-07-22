@@ -29,6 +29,13 @@ message IndexSchema {
   repeated Attribute attributes = 6;
   Stats stats = 7;
   optional uint32 db_num = 8;
+  
+  // Per-index text processing options (shared across all TEXT fields)
+  string punctuation = 9;
+  bool with_offsets = 10;
+  repeated string stop_words = 11;
+  Language text_language = 12;
+  bool nostem = 13;
 }
 
 enum AttributeIndexType {
@@ -47,6 +54,7 @@ message Index {
     VectorIndex vector_index = 1;
     NumericIndex numeric_index = 2;
     TagIndex tag_index = 3;
+    TextIndex text_index = 4;
   }
 }
 
@@ -55,6 +63,12 @@ message NumericIndex {}
 message TagIndex {
   string separator = 1;
   bool case_sensitive = 2;
+}
+
+message TextIndex {
+  bool suffix_tree = 1;
+  bool nostem = 2;
+  uint32 min_stem_size = 3;
 }
 
 message TrackedKeyMetadata {

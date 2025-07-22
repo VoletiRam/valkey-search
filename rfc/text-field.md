@@ -315,53 +315,86 @@ Each ```TEXT``` field has the a set of configurables some control the process to
 
 ### Extension of the ```FT.CREATE``` command
 
-Clauses are provided to control the configuration. 
-If supplied before the ```SCHEMA``` keyword then the default value of the clause is changed for any text fields declared in this command.
-If supplied as part of an individual field declaration, i.e., after the ```SCHEMA``` keyword, then it sets the configurable for just that field.
+The ```FT.CREATE``` command is extended to support text search functionality with two categories of configuration options:
+
+1. **Per-index text processing options**: These options apply to all TEXT fields in the index and must be specified before the ```SCHEMA``` keyword.
+2. **Per-field text options**: These options apply to individual TEXT fields and are specified within the field declaration.
+
+#### Complete FT.CREATE Syntax
+
+```
+FT.CREATE index_name
+  [ON HASH | JSON]
+  [PREFIX count prefix [prefix ...]]
+  
+  # Per-index text processing options
+  [PUNCTUATION <string>]
+  [WITHOFFSETS | NOOFFSETS]
+  [NOSTOPWORDS | STOPWORDS <count> [word ...]]
+  [LANGUAGE <language> | NOSTEM]
+  
+  SCHEMA {
+    field_name [AS alias] {
+      TEXT [
+        WITHSUFFIXTRIE | NOSUFFIXTRIE |
+        NOSTEM |
+        MINSTEMSIZE <size>
+      ] |
+      TAG [SEPARATOR {sep}] [CASESENSITIVE] |
+      NUMERIC |
+      VECTOR [HNSW | FLAT] {attr_count} [attribute_name attribute_value]+
+    } [...]
+  }
+```
+
+#### Per-Index Text Processing Options
+
+These options control the tokenization pipeline that is shared across all TEXT fields in the index:
 
 ```
 [PUNCTUATION <string>]
 ```
-The characters of this string are used to split the input string into words. Note, the splitting process allows escaping of input characters using the usual backslash notation. This string cannot be empty. Default value is: _TBD_
-
-
-```
-[WITHSUFFIXTRIE | NOSUFFIXTRIE]
-```
-
-Controls the presence/absence of the second prefix tree in the field-index. Default is ```NOSUFFIXTRIE```.
+The characters of this string are used to split the input string into words during tokenization. The splitting process allows escaping of input characters using the usual backslash notation. This string cannot be empty. Default value includes common punctuation and whitespace characters.
 
 ```
 [WITHOFFSETS | NOOFFSETS]
 ```
-
-Controls whether term-offsets are tracked in the field-index. Default is ```WITHOFFSETS```.
+Controls whether term-offsets are tracked in the text field-indexes. When enabled, supports phrase matching queries. Default is ```WITHOFFSETS```.
 
 ```
 [NOSTOPWORDS | STOPWORDS <count> [word ...]]
 ```
+Controls the application and list of stop words during tokenization. Note that ```STOPWORDS 0``` is equivalent to ```NOSTOPWORDS```. The default stop words are:
 
-Controls the application and list of stop words. Note that ```STOPWORDS 0``` is equivalent to ```NOSTOPWORDS```. The default stop words are:
-
-**a,    is,    the,   an,   and,  are, as,  at,   be,   but,  by,   for,
- if,   in,    into,  it,   no,   not, of,  on,   or,   such, that, their,
- then, there, these, they, this, to,  was, will, with**.
-
-```
-[MINSTEMSIZE <size>]
-```
-
-This clause controls the minimum number of characters in a word before it is subjected to stemming. Default value is 4.
+**a, is, the, an, and, are, as, at, be, but, by, for, if, in, into, it, no, not, of, on, or, such, that, their, then, there, these, they, this, to, was, will, with**.
 
 ```
 [NOSTEM | LANGUAGE <language>]
 ```
-
-Controls the stemming algorithm. Supported languages are: 
+Controls the stemming algorithm applied during tokenization. Supported languages are: 
 
 **none, arabic, armenian, basque, catalan, danish, dutch, english, estonian, finnish, french, german, greek, hindi, hungarian, indonesian, irish, italian, lithuanian, nepali, norwegian, porter, portuguese, romanian, russian, scripts, serbian, spanish, swedish, tamil, turkish, yiddish**
 
 The default language is **english**. Note: ```LANGUAGE none``` is equivalent to ```NOSTEM```.
+
+#### Per-Field Text Options
+
+These options are specified within individual TEXT field declarations and control field-specific behavior:
+
+```
+[WITHSUFFIXTRIE | NOSUFFIXTRIE]
+```
+Controls the presence/absence of the suffix tree for this specific TEXT field. Required for infix and suffix wildcard matching. Default is ```NOSUFFIXTRIE```.
+
+```
+[NOSTEM]
+```
+Disables stemming for this specific TEXT field, overriding the per-index stemming setting.
+
+```
+[MINSTEMSIZE <size>]
+```
+Controls the minimum number of characters in a word before it is subjected to stemming for this specific TEXT field. Default value is 4.
 
 ### Query Language Extensions
 

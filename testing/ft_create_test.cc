@@ -164,6 +164,67 @@ INSTANTIATE_TEST_SUITE_P(
                 },
         },
         {
+            .test_name = "happy_path_text_with_options",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "description",
+                     "text", "NOSTEM", "MINSTEMSIZE", "5"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "description",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_text_with_vector",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "content",
+                     "text", "WITHSUFFIXTRIE", "vector", "vector", "HNSW", "14",
+                     "TYPE", "FLOAT32", "DIM", "128", "DISTANCE_METRIC", "L2",
+                     "M", "16", "EF_CONSTRUCTION", "200", "INITIAL_CAP", "1000",
+                     "EF_RUNTIME", "100"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "content",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "vector",
+                        .indexer_type = indexes::IndexerType::kHNSW,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_multiple_text_fields",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "title", "text",
+                     "NOSTEM", "description", "text", "MINSTEMSIZE", "4",
+                     "content", "text", "WITHSUFFIXTRIE"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "description",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "content",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
             .test_name = "happy_path_flat_with_tag",
             .argv = {"FT.CREATE", "test_index_schema", "schema", "vector",
                      "vector", "Flat", "8", "TYPE", "FLOAT32", "DIM", "100",
@@ -181,6 +242,44 @@ INSTANTIATE_TEST_SUITE_P(
                     {
                         .attribute_alias = "vector",
                         .indexer_type = indexes::IndexerType::kFlat,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_text_basic",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_text_with_tag_and_numeric",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "title", "text",
+                     "MINSTEMSIZE", "2", "tags", "tag", "SEPARATOR", ",", "score",
+                     "numeric"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "tags",
+                        .indexer_type = indexes::IndexerType::kTag,
+                    },
+                    {
+                        .attribute_alias = "score",
+                        .indexer_type = indexes::IndexerType::kNumeric,
                     },
                 },
         },

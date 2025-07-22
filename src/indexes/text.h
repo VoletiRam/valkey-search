@@ -30,9 +30,23 @@
 #ifndef VALKEYSEARCH_SRC_INDEXES_TEXT_H_
 #define VALKEYSEARCH_SRC_INDEXES_TEXT_H_
 
-#include "src/text/text.h"
+#include "absl/base/thread_annotations.h"
+#include "absl/functional/any_invocable.h"
+#include "absl/status/status.h" 
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
+#include "absl/synchronization/mutex.h"
+#include "src/indexes/index_base.h"
+#include "src/indexes/text/text.h"
+#include "src/index_schema.pb.h"
+#include "src/rdb_serialization.h"
+#include "src/utils/string_interning.h"
+#include "vmsdk/src/valkey_module_api/valkey_module.h"
 
 namespace valkey_search::indexes {
+
+// Forward declarations
+namespace query { class TextPredicate; }
 
 class Text : public IndexBase {
  public:
@@ -47,18 +61,16 @@ class Text : public IndexBase {
   absl::StatusOr<bool> ModifyRecord(const InternedStringPtr& key,
                                     absl::string_view data) override
       ABSL_LOCKS_EXCLUDED(index_mutex_);
-  int RespondWithInfo(RedisModuleCtx* ctx) const override;
+  int RespondWithInfo(ValkeyModuleCtx* ctx) const override;
   bool IsTracked(const InternedStringPtr& key) const override;
-  absl::Status SaveIndex(RDBOutputStream& rdb_stream) const override {
+  absl::Status SaveIndex(RDBChunkOutputStream chunked_out) const override {
     return absl::OkStatus();
   }
 
   inline void ForEachTrackedKey(
       absl::AnyInvocable<void(const InternedStringPtr&)> fn) const override {
-    absl::MutexLock lock(&index_mutex_);
-    for (const auto& [key, _] : tracked_tags_by_keys_) {
-      fn(key);
-    }
+    // No-op placeholder until text index implementation is complete
+    // Text indexing functionality will be implemented later
   }
   uint64_t GetRecordCount() const override;
   std::unique_ptr<data_model::Index> ToProto() const override;
@@ -89,6 +101,8 @@ class Text : public IndexBase {
 
  private:
   mutable absl::Mutex index_mutex_;
+  // Allen's text subsystem implementation will be integrated here
+  std::unique_ptr<text::TextFieldIndex> text_impl_;
 };
 }  // namespace valkey_search::indexes
 

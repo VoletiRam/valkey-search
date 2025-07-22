@@ -45,6 +45,12 @@ struct FTCreateParameters {
   std::vector<AttributeParameters> attributes;
 };
 
+struct FTCreateTextParameters {
+  bool suffix_tree{true};
+  bool nostem{false};
+  uint32_t min_stem_size{3};
+};
+
 struct FTCreateParserTestCase {
   std::string test_name;
   bool success{false};
@@ -53,6 +59,7 @@ struct FTCreateParserTestCase {
   std::vector<HNSWParameters> hnsw_parameters;
   std::vector<FlatParameters> flat_parameters;
   std::vector<FTCreateTagParameters> tag_parameters;
+  std::vector<FTCreateTextParameters> text_parameters;
   FTCreateParameters expected;
 
   std::string expected_error_message;
@@ -81,7 +88,7 @@ TEST_P(FTCreateParserTest, ParseParams) {
                       "DISTANCE_METRIC IP ");
     }
   }
-  auto args = vmsdk::ToValkeyStringVector(command_str);
+  auto args = vmsdk::ToValkeyStringVector(command_str, "", false);  // Don't skip empty strings for comprehensive testing
   auto index_schema_proto =
       ParseFTCreateArgs(nullptr, args.data(), args.size());
   EXPECT_EQ(index_schema_proto.ok(), test_case.success);
@@ -103,6 +110,7 @@ TEST_P(FTCreateParserTest, ParseParams) {
     auto hnsw_index = 0;
     auto flat_index = 0;
     auto tag_index = 0;
+    auto text_index = 0;
     for (auto i = 0; i < index_schema_proto->attributes().size(); ++i) {
       EXPECT_EQ(index_schema_proto->attributes(i).identifier(),
                 test_case.expected.attributes[i].identifier);
@@ -156,6 +164,17 @@ TEST_P(FTCreateParserTest, ParseParams) {
         EXPECT_EQ(tag_proto.case_sensitive(),
                   test_case.tag_parameters[tag_index].case_sensitive);
         ++tag_index;
+      } else if (test_case.expected.attributes[i].indexer_type ==
+                 indexes::IndexerType::kText) {
+        EXPECT_TRUE(index_schema_proto->attributes(i).index().has_text_index());
+        auto text_proto = index_schema_proto->attributes(i).index().text_index();
+        EXPECT_EQ(text_proto.suffix_tree(),
+                  test_case.text_parameters[text_index].suffix_tree);
+        EXPECT_EQ(text_proto.nostem(),
+                  test_case.text_parameters[text_index].nostem);
+        EXPECT_EQ(text_proto.min_stem_size(),
+                  test_case.text_parameters[text_index].min_stem_size);
+        ++text_index;
       } else {
         EXPECT_FALSE(index_schema_proto->attributes(i)
                          .index()
@@ -551,12 +570,55 @@ INSTANTIATE_TEST_SUITE_P(
                           }}},
          },
          {
+             .test_name = "happy_path_text_basic",
+             .success = true,
+             .command_str = "idx1 on HASH SChema hash_field1 as "
+                            "hash_field11 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx1",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field11",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "happy_path_text_with_options",
+             .success = true,
+             .command_str = "idx1 on HASH SChema hash_field1 as "
+                            "hash_field11 text NOSTEM WITHSUFFIXTRIE MINSTEMSIZE 5",
+             .text_parameters = {{
+                 .suffix_tree = true,  // WITHSUFFIXTRIE should set suffix_tree = true
+                 .nostem = true,
+                 .min_stem_size = 5,
+             }},
+             .expected = {.index_schema_name = "idx1",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field11",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "invalid_text_minstemsize_negative",
+             .success = false,
+             .command_str = "idx1 SChema hash_field1 text MINSTEMSIZE -1",
+             .expected_error_message =
+                 "Invalid field type for field `hash_field1`: Error parsing value for the parameter `MINSTEMSIZE` - `-1` is outside acceptable bounds",
+         },
+         {
              .test_name = "missing_vector_index",
              .success = false,
              .command_str = "idx1 on HASH SChema hash_field1 as "
                             "hash_field11 numeric ",
              .expected_error_message =
-                 "At least one attribute must be indexed as a vector",
+                 "At least one attribute must be indexed as a vector or text",
          },
          {
              .test_name = "invalid_separator",
@@ -910,6 +972,196 @@ INSTANTIATE_TEST_SUITE_P(
              .command_str = "idx on hash prefix 1 a{b}",
              .expected_error_message =
                  "PREFIX argument(s) must not contain a hash tag",
+         },
+         // Allen's per-index text processing option tests
+         {
+             .test_name = "per_index_punctuation_basic",
+             .success = true,
+             .command_str = "idx on HASH PUNCTUATION \".,!?\" SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_punctuation_empty_error",
+             .success = false,
+             .command_str = "idx on HASH PUNCTUATION \"\" SCHEMA hash_field1 text",
+             .expected_error_message = "PUNCTUATION cannot be empty",
+         },
+         {
+             .test_name = "per_index_withoffsets",
+             .success = true,
+             .command_str = "idx on HASH WITHOFFSETS SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_nooffsets",
+             .success = true,
+             .command_str = "idx on HASH NOOFFSETS SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_withoffsets_nooffsets_conflict",
+             .success = false,
+             .command_str = "idx on HASH WITHOFFSETS NOOFFSETS SCHEMA hash_field1 text",
+             .expected_error_message = "Cannot specify both WITHOFFSETS and NOOFFSETS",
+         },
+         {
+             .test_name = "per_index_stopwords_basic",
+             .success = true,
+             .command_str = "idx on HASH STOPWORDS 3 a is the SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_stopwords_zero_equiv_nostopwords",
+             .success = true,
+             .command_str = "idx on HASH STOPWORDS 0 SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_nostopwords",
+             .success = true,
+             .command_str = "idx on HASH NOSTOPWORDS SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_nostopwords_stopwords_conflict",
+             .success = false,
+             .command_str = "idx on HASH NOSTOPWORDS STOPWORDS 1 the SCHEMA hash_field1 text",
+             .expected_error_message = "Cannot specify both NOSTOPWORDS and STOPWORDS",
+         },
+         {
+             .test_name = "per_index_language_english",
+             .success = true,
+             .command_str = "idx on HASH LANGUAGE ENGLISH SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_nostem",
+             .success = true,
+             .command_str = "idx on HASH NOSTEM SCHEMA hash_field1 text",
+             .text_parameters = {{
+                 .suffix_tree = false,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
+         },
+         {
+             .test_name = "per_index_nostem_language_conflict",
+             .success = false,
+             .command_str = "idx on HASH NOSTEM LANGUAGE ENGLISH SCHEMA hash_field1 text",
+             .expected_error_message = "Cannot specify both NOSTEM and LANGUAGE",
+         },
+         {
+             .test_name = "per_index_stopwords_insufficient_args",
+             .success = false,
+             .command_str = "idx on HASH STOPWORDS 3 word1 word2 SCHEMA hash_field1 text",
+             .expected_error_message = "Expected 3 stop words but got 2 remaining arguments.",
+         },
+         {
+             .test_name = "per_index_stopwords_negative_count",
+             .success = false,
+             .command_str = "idx on HASH STOPWORDS -1 SCHEMA hash_field1 text",
+             .expected_error_message = "STOPWORDS count cannot be negative",
+         },
+         {
+             .test_name = "per_index_combined_options",
+             .success = true,
+             .command_str = "idx on HASH PUNCTUATION \".,!\" WITHOFFSETS LANGUAGE ENGLISH STOPWORDS 2 a the SCHEMA hash_field1 text WITHSUFFIXTRIE",
+             .text_parameters = {{
+                 .suffix_tree = true,
+                 .nostem = false,
+                 .min_stem_size = 4,
+             }},
+             .expected = {.index_schema_name = "idx",
+                          .on_data_type = data_model::ATTRIBUTE_DATA_TYPE_HASH,
+                          .attributes = {{
+                              .identifier = "hash_field1",
+                              .attribute_alias = "hash_field1",
+                              .indexer_type = indexes::IndexerType::kText,
+                          }}},
          }}),
     [](const TestParamInfo<FTCreateParserTestCase> &info) {
       return info.param.test_name;
