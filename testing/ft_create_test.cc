@@ -164,6 +164,67 @@ INSTANTIATE_TEST_SUITE_P(
                 },
         },
         {
+            .test_name = "happy_path_text_with_options",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "description",
+                     "text", "NOSTEM", "MINSTEMSIZE", "5"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "description",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_text_with_vector",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "content",
+                     "text", "WITHSUFFIXTRIE", "vector", "vector", "HNSW", "14",
+                     "TYPE", "FLOAT32", "DIM", "128", "DISTANCE_METRIC", "L2",
+                     "M", "16", "EF_CONSTRUCTION", "200", "INITIAL_CAP", "1000",
+                     "EF_RUNTIME", "100"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "content",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "vector",
+                        .indexer_type = indexes::IndexerType::kHNSW,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_multiple_text_fields",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "title", "text",
+                     "NOSTEM", "description", "text", "MINSTEMSIZE", "4",
+                     "content", "text", "WITHSUFFIXTRIE"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "description",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "content",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
             .test_name = "happy_path_flat_with_tag",
             .argv = {"FT.CREATE", "test_index_schema", "schema", "vector",
                      "vector", "Flat", "8", "TYPE", "FLOAT32", "DIM", "100",
@@ -181,6 +242,215 @@ INSTANTIATE_TEST_SUITE_P(
                     {
                         .attribute_alias = "vector",
                         .indexer_type = indexes::IndexerType::kFlat,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_text",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "happy_path_text_with_tag_and_numeric",
+            .argv = {"FT.CREATE", "test_index_schema", "SCHEMA", "title", "text",
+                     "MINSTEMSIZE", "2", "tags", "tag", "SEPARATOR", ",", "score",
+                     "numeric"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "tags",
+                        .indexer_type = indexes::IndexerType::kTag,
+                    },
+                    {
+                        .attribute_alias = "score",
+                        .indexer_type = indexes::IndexerType::kNumeric,
+                    },
+                },
+        },
+        // Schema-level text processing options tests
+        {
+            .test_name = "schema_punctuation_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "PUNCTUATION", ".,!?;:", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_nooffsets_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "NOOFFSETS", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_withoffsets_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "WITHOFFSETS", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_stopwords_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "STOPWORDS", "3", "foo", "bar", "baz", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_nostopwords_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "NOSTOPWORDS", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_language_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "LANGUAGE", "english", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_nostem_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "NOSTEM", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_minstemsize_setting",
+            .argv = {"FT.CREATE", "test_index_schema", "MINSTEMSIZE", "3", 
+                     "SCHEMA", "title", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_combined_text_settings",
+            .argv = {"FT.CREATE", "test_index_schema", "PUNCTUATION", ".,!?", 
+                     "NOOFFSETS", "STOPWORDS", "2", "the", "and", "NOSTEM",
+                     "SCHEMA", "title", "text", "content", "text"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "content",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                },
+        },
+        {
+            .test_name = "schema_text_with_mixed_field_types",
+            .argv = {"FT.CREATE", "test_index_schema", "PUNCTUATION", ".,!?", 
+                     "WITHOFFSETS", "LANGUAGE", "english", "MINSTEMSIZE", "5",
+                     "SCHEMA", "title", "text", "tags", "tag", "score", "numeric",
+                     "vector", "vector", "HNSW", "6", "TYPE", "FLOAT32", "DIM", "3",
+                     "DISTANCE_METRIC", "IP"},
+            .index_schema_name = "test_index_schema",
+            .expected_run_return = VALKEYMODULE_OK,
+            .expected_reply_message = "+OK\r\n",
+            .expected_indexes =
+                {
+                    {
+                        .attribute_alias = "title",
+                        .indexer_type = indexes::IndexerType::kText,
+                    },
+                    {
+                        .attribute_alias = "tags",
+                        .indexer_type = indexes::IndexerType::kTag,
+                    },
+                    {
+                        .attribute_alias = "score",
+                        .indexer_type = indexes::IndexerType::kNumeric,
+                    },
+                    {
+                        .attribute_alias = "vector",
+                        .indexer_type = indexes::IndexerType::kHNSW,
                     },
                 },
         },
@@ -432,6 +702,146 @@ INSTANTIATE_TEST_SUITE_P(
     [](const TestParamInfo<MaxLimitTestCase>& info) {
       return info.param.test_name;
     });
+
+// Test to verify schema settings are properly preserved
+TEST_F(FTCreateTest, SchemaSettingsPreservation) {
+  int db_num = 1;
+  ON_CALL(*kMockValkeyModule, GetSelectedDb(&fake_ctx_))
+      .WillByDefault(testing::Return(db_num));
+
+  // Create an index with specific schema settings (avoid conflicting NOSTEM + LANGUAGE)
+  std::vector<std::string> argv = {
+      "FT.CREATE", "test_schema_settings",
+      "PUNCTUATION", ".,!?;:",
+      "NOOFFSETS",
+      "STOPWORDS", "2", "foo", "bar", 
+      "MINSTEMSIZE", "7",
+      "SCHEMA", "title", "text"
+  };
+  
+  ExecuteFTCreateCommand(&fake_ctx_, argv);
+
+  // Get the created index schema
+  auto index_schema_result = SchemaManager::Instance().GetIndexSchema(db_num, "test_schema_settings");
+  VMSDK_EXPECT_OK(index_schema_result);
+  auto index_schema = index_schema_result.value();
+
+  // Verify all schema settings are preserved
+  EXPECT_EQ(index_schema->GetPunctuation(), ".,!?;:");
+  EXPECT_FALSE(index_schema->GetWithOffsets());  // NOOFFSETS was set
+  
+  auto stop_words = index_schema->GetStopWords();
+  EXPECT_EQ(stop_words.size(), 2);
+  EXPECT_TRUE(std::find(stop_words.begin(), stop_words.end(), "foo") != stop_words.end());
+  EXPECT_TRUE(std::find(stop_words.begin(), stop_words.end(), "bar") != stop_words.end());
+  
+  EXPECT_EQ(index_schema->GetTextLanguage(), data_model::LANGUAGE_ENGLISH);  // Default language
+  EXPECT_FALSE(index_schema->GetNostem());  // Default is to use stemming
+  EXPECT_EQ(index_schema->GetMinStemSize(), 7);
+
+  // Verify ToProto() preserves all settings
+  auto proto = index_schema->ToProto();
+  EXPECT_EQ(proto->punctuation(), ".,!?;:");
+  EXPECT_FALSE(proto->with_offsets());
+  EXPECT_EQ(proto->stop_words_size(), 2);
+  EXPECT_EQ(proto->stop_words(0), "foo");
+  EXPECT_EQ(proto->stop_words(1), "bar");
+  EXPECT_EQ(proto->language(), data_model::LANGUAGE_ENGLISH);
+  EXPECT_FALSE(proto->nostem());  // Default is to use stemming
+  EXPECT_EQ(proto->min_stem_size(), 7);
+
+  VMSDK_EXPECT_OK(SchemaManager::Instance().RemoveIndexSchema(db_num, "test_schema_settings"));
+}
+
+// Test to verify NOSTEM setting separately
+TEST_F(FTCreateTest, SchemaNoStemSetting) {
+  int db_num = 1;
+  ON_CALL(*kMockValkeyModule, GetSelectedDb(&fake_ctx_))
+      .WillByDefault(testing::Return(db_num));
+
+  // Create an index with NOSTEM (without LANGUAGE to avoid conflict)
+  std::vector<std::string> argv = {
+      "FT.CREATE", "test_nostem",
+      "NOSTEM",
+      "SCHEMA", "title", "text"
+  };
+  
+  ExecuteFTCreateCommand(&fake_ctx_, argv);
+
+  // Get the created index schema
+  auto index_schema_result = SchemaManager::Instance().GetIndexSchema(db_num, "test_nostem");
+  VMSDK_EXPECT_OK(index_schema_result);
+  auto index_schema = index_schema_result.value();
+
+  // Verify NOSTEM setting is preserved
+  EXPECT_TRUE(index_schema->GetNostem());
+
+  // Verify ToProto() preserves NOSTEM setting
+  auto proto = index_schema->ToProto();
+  EXPECT_TRUE(proto->nostem());
+
+  VMSDK_EXPECT_OK(SchemaManager::Instance().RemoveIndexSchema(db_num, "test_nostem"));
+}
+
+// Test to verify LANGUAGE setting separately
+TEST_F(FTCreateTest, SchemaLanguageSetting) {
+  int db_num = 1;
+  ON_CALL(*kMockValkeyModule, GetSelectedDb(&fake_ctx_))
+      .WillByDefault(testing::Return(db_num));
+
+  // Create an index with LANGUAGE (without NOSTEM to avoid conflict)
+  std::vector<std::string> argv = {
+      "FT.CREATE", "test_language",
+      "LANGUAGE", "english",
+      "SCHEMA", "title", "text"
+  };
+  
+  ExecuteFTCreateCommand(&fake_ctx_, argv);
+
+  // Get the created index schema
+  auto index_schema_result = SchemaManager::Instance().GetIndexSchema(db_num, "test_language");
+  VMSDK_EXPECT_OK(index_schema_result);
+  auto index_schema = index_schema_result.value();
+
+  // Verify LANGUAGE setting is preserved
+  EXPECT_EQ(index_schema->GetTextLanguage(), data_model::LANGUAGE_ENGLISH);
+  EXPECT_FALSE(index_schema->GetNostem());  // Should be false when language is specified
+
+  // Verify ToProto() preserves LANGUAGE setting
+  auto proto = index_schema->ToProto();
+  EXPECT_EQ(proto->language(), data_model::LANGUAGE_ENGLISH);
+  EXPECT_FALSE(proto->nostem());
+
+  VMSDK_EXPECT_OK(SchemaManager::Instance().RemoveIndexSchema(db_num, "test_language"));
+}
+
+// Test to verify default schema settings
+TEST_F(FTCreateTest, DefaultSchemaSettings) {
+  int db_num = 1;
+  ON_CALL(*kMockValkeyModule, GetSelectedDb(&fake_ctx_))
+      .WillByDefault(testing::Return(db_num));
+
+  // Create an index without explicit schema settings
+  std::vector<std::string> argv = {
+      "FT.CREATE", "test_defaults",
+      "SCHEMA", "title", "text"
+  };
+  
+  ExecuteFTCreateCommand(&fake_ctx_, argv);
+
+  // Get the created index schema
+  auto index_schema_result = SchemaManager::Instance().GetIndexSchema(db_num, "test_defaults");
+  VMSDK_EXPECT_OK(index_schema_result);
+  auto index_schema = index_schema_result.value();
+
+  // Verify default settings are applied
+  EXPECT_TRUE(index_schema->GetWithOffsets());  // Default is WITHOFFSETS
+  EXPECT_EQ(index_schema->GetTextLanguage(), data_model::LANGUAGE_ENGLISH);  // Default language
+  EXPECT_FALSE(index_schema->GetNostem());  // Default is to use stemming
+  EXPECT_EQ(index_schema->GetMinStemSize(), 4);  // Default min stem size
+
+  VMSDK_EXPECT_OK(SchemaManager::Instance().RemoveIndexSchema(db_num, "test_defaults"));
+}
 
 }  // namespace
 

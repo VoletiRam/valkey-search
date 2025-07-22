@@ -52,7 +52,8 @@ class ValkeyTestWithParam : public TestWithParam<T> {
 };
 
 std::vector<ValkeyModuleString*> ToValkeyStringVector(
-    absl::string_view params_str, absl::string_view exclude = "");
+    absl::string_view params_str, absl::string_view exclude = "", 
+    bool skip_empty = true);
 
 MATCHER_P(ValkeyModuleStringEq, value, "") {
   return *((std::string*)arg) == *((std::string*)value);

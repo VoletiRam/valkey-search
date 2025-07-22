@@ -15,21 +15,21 @@
 namespace vmsdk {
 
 std::vector<ValkeyModuleString*> ToValkeyStringVector(
-    absl::string_view params_str, absl::string_view exclude) {
-  std::vector<absl::string_view> params =
-      absl::StrSplit(params_str, ' ', absl::SkipEmpty());
+    absl::string_view params_str, absl::string_view exclude, bool skip_empty) {
+  std::vector<absl::string_view> params;
+  if (skip_empty) {
+    params = absl::StrSplit(params_str, ' ', absl::SkipEmpty());
+  } else {
+    params = absl::StrSplit(params_str, ' ');
+  }
+  
   std::vector<ValkeyModuleString*> ret;
-  for (size_t i = 0; i < params.size(); i += 2) {
+  for (size_t i = 0; i < params.size(); i++) {
     if (exclude == params[i]) {
       continue;
     }
     ret.push_back(
         ValkeyModule_CreateString(nullptr, params[i].data(), params[i].size()));
-    if (i + 1 == params.size()) {
-      break;
-    }
-    ret.push_back(ValkeyModule_CreateString(nullptr, params[i + 1].data(),
-                                            params[i + 1].size()));
   }
   return ret;
 }
