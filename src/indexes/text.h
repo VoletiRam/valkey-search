@@ -46,6 +46,7 @@
 #include "src/rdb_serialization.h"
 #include "src/utils/string_interning.h"
 #include "vmsdk/src/valkey_module_api/valkey_module.h"
+#include "src/indexes/text/lexer.h"
 
 // Forward declaration
 namespace valkey_search::indexes {
@@ -66,6 +67,11 @@ struct TextFieldIndex {
       : text_index_proto_(text_index_proto),
         index_schema_proto_(index_schema_proto),
         field_identifier_(field_identifier),
+        // Initialize lexer in the constructor's initialization list
+        lexer_(index_schema_proto_ ? 
+              Lexer(text_index_proto_, *index_schema_proto_) : 
+              Lexer(text_index_proto_, data_model::IndexSchema())) {
+    // Initialize text index structures
     text_ = std::make_shared<TextIndex>();
   }
 
@@ -119,6 +125,8 @@ struct TextFieldIndex {
   const data_model::IndexSchema* index_schema_proto_;
   // Field identifier (name or alias)
   std::string field_identifier_;
+  // Lexer for text processing
+  text::Lexer lexer_;
 };
 
 
