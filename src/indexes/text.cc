@@ -16,6 +16,8 @@
 #include "src/indexes/text/fuzzy.h"
 #include "src/indexes/text/lexer.h"
 #include "src/valkey_search_options.h"
+#include "src/indexes/text/negation_entries_fetcher.h"
+#include "src/indexes/text/negation_iterator.h"
 
 namespace valkey_search::indexes {
 
@@ -162,17 +164,31 @@ std::unique_ptr<indexes::EntriesFetcherBase> BuildExactPhraseFetcher(
 
 void* TextPredicate::Search(bool negate) const {
   size_t estimated_size = EstimateSize();
-  // We do not perform positional checks on the initial term/prefix/suffix/fuzzy
-  // predicate fetchers from the entries fetcher search.
-  // This is yet another optimization that can be done in the future to complete
-  // the text search during the initial entries fetcher search itself for
-  // proximity queries.
   bool require_positions = false;
-  auto fetcher = std::make_unique<indexes::Text::EntriesFetcher>(
-      estimated_size, GetTextIndexSchema()->GetTextIndex(), nullptr,
-      GetFieldMask(), require_positions);
-  fetcher->predicate_ = this;
-  return fetcher.release();
+
+  if (!negate) {
+    auto fetcher = std::make_unique<indexes::Text::EntriesFetcher>(
+        estimated_size, GetTextIndexSchema()->GetTextIndex(), nullptr,
+        GetFieldMask(), require_positions);
+    fetcher->predicate_ = this;
+    return fetcher.release();
+  }
+
+  auto positive_iterator = BuildTextIterator(
+      std::make_unique<indexes::Text::EntriesFetcher>(
+          estimated_size, GetTextIndexSchema()->GetTextIndex(), nullptr,
+          GetFieldMask(), require_positions)
+          .get());
+
+  auto negation_iterator =
+      std::make_unique<indexes::text::NegationTextIterator>(
+          std::move(positive_iterator),
+          GetTextIndexSchema()->GetSchemaTrackedKeys(),
+          GetTextIndexSchema()->GetSchemaUntrackedKeys(), GetFieldMask());
+
+  return new indexes::text::NegationEntriesFetcher(
+      std::move(negation_iterator), estimated_size,
+      GetTextIndexSchema()->GetTextIndex(), GetFieldMask());
 }
 
 std::unique_ptr<indexes::text::TextIterator> TermPredicate::BuildTextIterator(

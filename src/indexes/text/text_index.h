@@ -140,6 +140,13 @@ class TextIndexSchema {
   // Prevent concurrent mutations to in-progress key updates map
   std::mutex in_progress_key_updates_mutex_;
 
+  // Schema-level key tracking for negation queries
+  // Keys with ANY text content in ANY field
+  InternedStringSet schema_tracked_keys_ ABSL_GUARDED_BY(schema_keys_mutex_);
+  // Keys with NO text content in ANY field
+  InternedStringSet schema_untracked_keys_ ABSL_GUARDED_BY(schema_keys_mutex_);
+  mutable std::mutex schema_keys_mutex_;
+
   // Whether to store position offsets for phrase queries
   bool with_offsets_ = false;
 
@@ -184,6 +191,17 @@ class TextIndexSchema {
     }
     // Key not found in text indexes - this is normal for keys without text data
     return nullptr;
+  }
+
+  // Thread-safe accessors for schema-level key tracking
+  const InternedStringSet& GetSchemaTrackedKeys() const {
+    std::lock_guard<std::mutex> guard(schema_keys_mutex_);
+    return schema_tracked_keys_;
+  }
+
+  const InternedStringSet& GetSchemaUntrackedKeys() const {
+    std::lock_guard<std::mutex> guard(schema_keys_mutex_);
+    return schema_untracked_keys_;
   }
 };
 
