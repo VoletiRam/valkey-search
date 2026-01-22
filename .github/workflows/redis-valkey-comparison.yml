@@ -1,27 +1,25 @@
-name: Valkey Search Benchmark
+name: Redis vs Valkey Search Comparison
 
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: "Branch to benchmark"
+      valkey_branch:
+        description: "Valkey branch to test"
+        required: false
+        default: "unstable"
+        type: string
+      valkey_search_branch:
+        description: "Valkey-search branch to test"
         required: false
         default: "main"
-        type: string
-      num_runs:
-        description: "Number of runs to benchmark"
-        required: false
-        default: "1"
         type: string
   push:
   schedule:
     - cron: "0 9 * * *"
 
-# Prevent concurrent workflow runs to avoid conflicts and resource contention
-# - group: All workflow runs share the same concurrency group
-# - cancel-in-progress: false: Queue new runs instead of canceling existing ones
+# Prevent concurrent workflow runs
 concurrency:
-  group: valkey-search-arm
+  group: redis-valkey-comparison-arm
   cancel-in-progress: false
 
 defaults:
@@ -33,11 +31,11 @@ permissions:
   contents: read
 
 jobs:
-  valkey_search_benchmark:
+  redis_valkey_comparison:
     env:
-      BRANCH: ${{ inputs.branch || 'main' }}
-      NUM_RUN: ${{ inputs.num_runs || '5' }}
-    runs-on: [self-hosted, valkey-search-arm]
+      VALKEY_BRANCH: ${{ inputs.valkey_branch || 'unstable' }}
+      VALKEY_SEARCH_BRANCH: ${{ inputs.valkey_search_branch || 'main' }}
+    runs-on: [self-hosted, redis-valkey-comparison-arm]
     timeout-minutes: 7200
     steps:
       - name: Set up Python
@@ -58,7 +56,7 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           repository: valkey-io/valkey
-          ref: unstable
+          ref: ${{ env.VALKEY_BRANCH }}
           path: valkey
           fetch-depth: 0
           persist-credentials: false
@@ -67,7 +65,7 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           repository: valkey-io/valkey-search
-          ref: main
+          ref: ${{ env.VALKEY_SEARCH_BRANCH }}
           path: valkey-search
           fetch-depth: 0
           persist-credentials: false
@@ -154,12 +152,7 @@ jobs:
           # Verify GCC 12 installation
           if [[ ! -f "/usr/local/bin/gcc" ]]; then
             echo "✗ ERROR: GCC 12 not found at /usr/local/bin/gcc"
-            echo "Please complete the GCC 12 installation on the runner first:"
-            echo "  cd /tmp && wget https://ftp.gnu.org/gnu/gcc/gcc-12.3.0/gcc-12.3.0.tar.gz"
-            echo "  tar xzf gcc-12.3.0.tar.gz && cd gcc-12.3.0"
-            echo "  ./contrib/download_prerequisites"
-            echo "  ./configure --prefix=/usr/local --enable-languages=c,c++"
-            echo "  make -j\$(nproc) && sudo make install"
+            echo "Please complete the GCC 12 installation on the runner first"
             exit 1
           fi
           
@@ -172,8 +165,6 @@ jobs:
           echo "Using GCC 12:"
           gcc --version
           g++ --version
-          which gcc
-          which g++
           
           ./build.sh
           if [[ -f ".build-release/libsearch.so" ]]; then
@@ -184,47 +175,91 @@ jobs:
             exit 1
           fi
 
-      - name: Run Search Benchmarks
+      - name: Run Valkey Benchmark (with config variations)
         working-directory: valkey-perf-benchmark
         run: |
-          echo "Running search benchmarks..."
-          echo "Config file controls CPU pinning (server_cpu_range, client_cpu_range)"
-          echo "benchmark.py will handle server lifecycle management"
+          echo "Running Valkey benchmarks with config_sets variations..."
+          echo "Config file: configs/fts-benchmarks.json"
           
+          # Launch Valkey in Docker
+          /home/ec2-user/redis-comparison-scripts/run_server_docker.sh \
+            --server-type valkey \
+            --port 6379 \
+            --valkey-path $(pwd)/../valkey \
+            --search-module $(pwd)/../valkey-search/.build-release/libsearch.so
+          
+          # Run benchmark
           python benchmark.py \
             --module search \
             --valkey-path ../valkey \
             --valkey-benchmark-path ../valkey_ram/src/valkey-benchmark \
-            --target-ip ${{ secrets.EC2_SEARCH_IP }} \
+            --target-ip ${{ secrets.EC2_SEARCH_REDIS_VALKEY_IP }} \
             --config configs/fts-benchmarks.json \
-            --mode both \
-            --module-path ../valkey-search/.build-release/libsearch.so \
-            --results-dir results \
-            --runs $NUM_RUN
+            --mode client \
+            --use-running-server \
+            --skip-profiling \
+            --results-dir results/valkey
+          
+          # Stop Valkey
+          /home/ec2-user/redis-comparison-scripts/stop_server_docker.sh --server-type valkey
 
-      - name: Clean large profiling data
-        if: always()
-        continue-on-error: true
+      - name: Run Redis Benchmark (with skip-config-set)
+        working-directory: valkey-perf-benchmark
         run: |
-          echo "Removing large .perf.data files..."
-          find valkey-perf-benchmark/results -name "*.perf.data" -type f -delete
-          echo "✓ Removed raw perf data, keeping flamegraphs and reports"
+          echo "Running Redis benchmarks..."
+          echo "Note: CONFIG SET commands will be skipped (Redis incompatible)"
+          
+          # Launch Redis container using script from persistent location
+          /home/ec2-user/redis-comparison-scripts/run_server_docker.sh \
+            --server-type redis \
+            --port 6379
+          
+          # Run benchmark
+          python benchmark.py \
+            --module search \
+            --valkey-path ../valkey \
+            --valkey-benchmark-path ../valkey_ram/src/valkey-benchmark \
+            --target-ip ${{ secrets.EC2_SEARCH_REDIS_VALKEY_IP }} \
+            --config configs/fts-benchmarks.json \
+            --mode client \
+            --use-running-server \
+            --skip-config-set \
+            --skip-profiling \
+            --results-dir results/redis
+          
+          # Stop Redis container
+          /home/ec2-user/redis-comparison-scripts/stop_server_docker.sh --server-type redis
 
-      - name: Upload Artifact
+      - name: Generate Comparison Report
+        working-directory: valkey-perf-benchmark
+        if: always()
+        run: |
+          echo "Generating Redis vs Valkey comparison report..."
+          
+          python /home/ec2-user/redis-comparison-scripts/generate_redis_valkey_comparison.py \
+            --valkey-results results/valkey/search_tests/metrics.json \
+            --redis-results results/redis/search_tests/metrics.json \
+            --output results/redis_valkey_comparison.csv
+
+      - name: Upload Comparison Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results
-          path: valkey-perf-benchmark/results
+          name: redis-valkey-comparison-results
+          path: valkey-perf-benchmark/results/
 
       - name: Cleanup
         if: always()
         continue-on-error: true
         run: |
           echo "Cleaning up workspace..."
-          pkill -f valkey || echo "No valkey processes found to kill"
+          pkill -f valkey || echo "No valkey processes found"
           
-          # No need to copy datasets - they're already in persistent cache via symlink
+          # Stop any running Docker containers
+          docker stop valkey-comparison redis-comparison 2>/dev/null || true
+          docker rm valkey-comparison redis-comparison 2>/dev/null || true
+          
+          # Datasets persist at /home/ec2-user/search-datasets-cache
           echo "Datasets persist at /home/ec2-user/search-datasets-cache"
           
           # Clean workspace
