@@ -72,6 +72,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Fetch config from fork (temporary - remove after PR merges)
+        run: |
+          mkdir -p valkey-search/.github/benchmark_configs
+          curl -f -o valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json \
+            https://raw.githubusercontent.com/VoletiRam/valkey-search/main/.github/benchmark_configs/fts-benchmarks-arm.json
+          echo "✓ Fetched config from fork"
+
       - name: Checkout valkey-perf-benchmark
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -188,15 +195,15 @@ jobs:
         working-directory: valkey-perf-benchmark
         run: |
           echo "Running search benchmarks..."
-          echo "Config file controls CPU pinning (server_cpu_range, client_cpu_range)"
-          echo "benchmark.py will handle server lifecycle management"
+          echo "Config file: ../valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json"
+          echo "Config controls CPU pinning (server_cpu_range, client_cpu_range)"
           
           python benchmark.py \
             --module search \
             --valkey-path ../valkey \
             --valkey-benchmark-path ../valkey_ram/src/valkey-benchmark \
             --target-ip ${{ secrets.EC2_SEARCH_IP }} \
-            --config configs/fts-benchmarks.json \
+            --config ../valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json \
             --mode both \
             --module-path ../valkey-search/.build-release/libsearch.so \
             --results-dir results \

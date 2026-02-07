@@ -70,6 +70,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Fetch config from fork (temporary - remove after PR merges)
+        run: |
+          mkdir -p valkey-search/.github/benchmark_configs
+          curl -f -o valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json \
+            https://raw.githubusercontent.com/VoletiRam/valkey-search/main/.github/benchmark_configs/fts-benchmarks-arm.json
+          echo "✓ Fetched config from fork"
+
       - name: Checkout valkey-perf-benchmark
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -179,7 +186,7 @@ jobs:
         working-directory: valkey-perf-benchmark
         run: |
           echo "Running Valkey benchmarks with config_sets variations..."
-          echo "Config file: configs/fts-benchmarks.json"
+          echo "Config file: ../valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json"
           
           # Launch Valkey in Docker
           /home/ec2-user/redis-comparison-scripts/run_server_docker.sh \
@@ -194,7 +201,7 @@ jobs:
             --valkey-path ../valkey \
             --valkey-benchmark-path ../valkey_ram/src/valkey-benchmark \
             --target-ip ${{ secrets.EC2_SEARCH_REDIS_VALKEY_IP }} \
-            --config configs/fts-benchmarks.json \
+            --config ../valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json \
             --mode client \
             --use-running-server \
             --skip-profiling \
@@ -208,6 +215,7 @@ jobs:
         run: |
           echo "Running Redis benchmarks..."
           echo "Note: CONFIG SET commands will be skipped (Redis incompatible)"
+          echo "Config file: ../valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json"
           
           # Launch Redis container using script from persistent location
           /home/ec2-user/redis-comparison-scripts/run_server_docker.sh \
@@ -220,7 +228,7 @@ jobs:
             --valkey-path ../valkey \
             --valkey-benchmark-path ../valkey_ram/src/valkey-benchmark \
             --target-ip ${{ secrets.EC2_SEARCH_REDIS_VALKEY_IP }} \
-            --config configs/fts-benchmarks.json \
+            --config ../valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json \
             --mode client \
             --use-running-server \
             --skip-config-set \
