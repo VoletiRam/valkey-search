@@ -33,7 +33,7 @@ permissions:
   contents: read
 
 jobs:
-  valkey_search_benchmark:
+  valkey_cluster_search_benchmark:
     env:
       BRANCH: ${{ inputs.branch || 'main' }}
       NUM_RUN: ${{ inputs.num_runs || '5' }}
