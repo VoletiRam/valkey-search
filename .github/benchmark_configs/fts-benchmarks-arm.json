@@ -355,7 +355,7 @@
       "32-39"
     ],
     "server_cpu_range": "0-7",
-    "client_cpu_range": "8-15",
+    "client_cpu_range": "40-47",
     "tls_mode": false,
     "io-threads": 8,
     "module_startup_args": "--use-coordinator",
