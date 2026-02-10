@@ -206,6 +206,7 @@ jobs:
             --config ../valkey-search/.github/benchmark_configs/fts-benchmarks-arm.json \
             --mode both \
             --module-path ../valkey-search/.build-release/libsearch.so \
+            --cluster-mode-filter false \
             --results-dir results \
             --runs $NUM_RUN
 
