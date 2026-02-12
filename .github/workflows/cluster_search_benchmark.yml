@@ -207,7 +207,6 @@ jobs:
             --mode both \
             --module-path ../valkey-search/.build-release/libsearch.so \
             --cluster-mode-filter true \
-            --skip-profiling \
             --results-dir results \
             --runs $NUM_RUN
 
