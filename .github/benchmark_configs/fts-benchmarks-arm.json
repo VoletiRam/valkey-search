@@ -82,14 +82,14 @@
     "test_groups": [
       {
         "group": 1,
-        "description": "Multi-field comprehensive (NOSTEM)",
+        "description": "Multi-field comprehensive (STEM enabled)",
         "scenarios": [
           {
             "id": "a",
             "type": "write",
             "cluster_execution": "single",
             "setup_commands": [
-              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT NOSTEM field2 TEXT NOSTEM field3 TEXT NOSTEM field4 TEXT NOSTEM field5 TEXT NOSTEM field6 TEXT NOSTEM field7 TEXT NOSTEM field8 TEXT NOSTEM field9 TEXT NOSTEM field10 TEXT NOSTEM field11 TEXT NOSTEM field12 TEXT NOSTEM field13 TEXT NOSTEM field14 TEXT NOSTEM field15 TEXT NOSTEM field16 TEXT NOSTEM field17 TEXT NOSTEM field18 TEXT NOSTEM field19 TEXT NOSTEM field20 TEXT NOSTEM field21 TEXT NOSTEM field22 TEXT NOSTEM field23 TEXT NOSTEM field24 TEXT NOSTEM field25 TEXT NOSTEM field26 TEXT NOSTEM field27 TEXT NOSTEM field28 TEXT NOSTEM field29 TEXT NOSTEM field30 TEXT NOSTEM field31 TEXT NOSTEM field32 TEXT NOSTEM field33 TEXT NOSTEM field34 TEXT NOSTEM field35 TEXT NOSTEM field36 TEXT NOSTEM field37 TEXT NOSTEM field38 TEXT NOSTEM field39 TEXT NOSTEM field40 TEXT NOSTEM field41 TEXT NOSTEM field42 TEXT NOSTEM field43 TEXT NOSTEM field44 TEXT NOSTEM field45 TEXT NOSTEM field46 TEXT NOSTEM field47 TEXT NOSTEM field48 TEXT NOSTEM field49 TEXT NOSTEM title TEXT NOSTEM"
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT field2 TEXT field3 TEXT field4 TEXT field5 TEXT field6 TEXT field7 TEXT field8 TEXT field9 TEXT field10 TEXT field11 TEXT field12 TEXT field13 TEXT field14 TEXT field15 TEXT field16 TEXT field17 TEXT field18 TEXT field19 TEXT field20 TEXT field21 TEXT field22 TEXT field23 TEXT field24 TEXT field25 TEXT field26 TEXT field27 TEXT field28 TEXT field29 TEXT field30 TEXT field31 TEXT field32 TEXT field33 TEXT field34 TEXT field35 TEXT field36 TEXT field37 TEXT field38 TEXT field39 TEXT field40 TEXT field41 TEXT field42 TEXT field43 TEXT field44 TEXT field45 TEXT field46 TEXT field47 TEXT field48 TEXT field49 TEXT title TEXT"
             ],
             "flush_before": true,
             "dataset": "datasets/field_explosion_50k.xml",
@@ -223,7 +223,7 @@
             "type": "write",
             "cluster_execution": "single",
             "setup_commands": [
-              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT NOSTEM"
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT"
             ],
             "flush_before": true,
             "dataset": "datasets/proximity_5term_1combo_100k.csv",
@@ -273,7 +273,7 @@
             "type": "write",
             "cluster_execution": "single",
             "setup_commands": [
-              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT NOSTEM"
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT"
             ],
             "flush_before": true,
             "dataset": "datasets/proximity_5term_100combo_100k.csv",
@@ -323,7 +323,7 @@
             "type": "write",
             "cluster_execution": "single",
             "setup_commands": [
-              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT NOSTEM"
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT"
             ],
             "flush_before": true,
             "dataset": "datasets/proximity_25term_100combo_100k.csv",
