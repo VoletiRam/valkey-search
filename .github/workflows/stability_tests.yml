@@ -1,0 +1,110 @@
+name: Stability and Endurance Tests
+
+on:
+  push:
+    branches:
+      - main
+      - main_endurance
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      test_filter:
+        description: 'Test filter pattern (e.g., "text_*" or "*coordinator*")'
+        required: false
+        default: ''
+        type: string
+      test_timeout_minutes:
+        description: 'Timeout for the entire test run (minutes)'
+        required: false
+        default: '180'
+        type: string
+  schedule:
+    # Run daily at 9 AM UTC
+    - cron: "0 9 * * *"
+
+concurrency:
+  group: stability-tests-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stability-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(github.event.inputs.test_timeout_minutes || '180') }}
+
+    steps:
+    # Checkout the code from the repository
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # Set up Docker to build and run the container
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v2
+
+    # Build the Docker image from the Dockerfile in your repo
+    - name: Build Docker Image
+      run: docker build -t stability-test-image -f .devcontainer/Dockerfile .
+
+    - name: Create Test Results Directory
+      run: |
+        mkdir -p stability-test-results
+        chmod 777 stability-test-results
+
+    - name: Run Stability Tests
+      id: test-run
+      timeout-minutes: ${{ fromJSON(github.event.inputs.test_timeout_minutes || '180') }}
+      continue-on-error: true
+      env:
+        TEST_FILTER: ${{ github.event.inputs.test_filter || '' }}
+      run: |
+        docker run --privileged --rm \
+          --mount type=bind,source="$(pwd)/stability-test-results",target=/workspace/test-results \
+          -v "$(pwd):/workspace" \
+          --user "ubuntu:ubuntu" \
+          stability-test-image \
+          bash -c "
+            set -e
+            cd /workspace
+            
+            # Build the project
+            echo '=== Building valkey-search module ==='
+            sudo ci/build_ubuntu.sh
+            
+            # Run stability tests
+            echo '=== Running Stability Tests ==='
+            cd /workspace/testing/integration
+            sudo -E ./run.sh --test stability
+          "
+
+    - name: Update Test Results Permissions
+      if: always()
+      run: sudo chmod -R 755 stability-test-results || true
+
+    # Display logs on failure for debugging
+    - name: Display Test Logs on Failure
+      if: failure()
+      run: |
+        echo "=== Test Results Directory Structure ==="
+        find stability-test-results -type f -ls || echo "No test results found"
+        echo ""
+        echo "=== Test Output Files ==="
+        find stability-test-results -name "*.log" -o -name "*.txt" -o -name "*.json" | while read file; do
+          echo "=== File: $file ==="
+          cat "$file" || echo "Could not read $file"
+          echo ""
+        done
+
+    # Upload test results as artifacts
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: stability-test-results-${{ github.run_number }}
+        path: stability-test-results
+        retention-days: 30
+
+    # Fail the job if tests failed
+    - name: Check Test Results
+      if: steps.test-run.outcome == 'failure'
+      run: exit 1
