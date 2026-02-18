@@ -369,18 +369,25 @@
     },
     "tls_mode": false,
     "io-threads": 8,
-    "module_startup_args": "--use-coordinator",
+    "modules": [
+      {
+        "path": "../valkey-search/.build-release/libsearch.so",
+        "startup_args": [
+          "--use-coordinator"
+        ]
+      }
+    ],
     "config_sets": [
-        {
-            "search.reader-threads": 1,
-            "search.writer-threads": 1,
-            "search.async-fanout-threshold": 4
-        },
-        {
-            "search.reader-threads": 8,
-            "search.writer-threads": 8,
-            "search.async-fanout-threshold": 4
-        }
+      {
+        "search.reader-threads": 1,
+        "search.writer-threads": 1,
+        "search.async-fanout-threshold": 4
+      },
+      {
+        "search.reader-threads": 8,
+        "search.writer-threads": 8,
+        "search.async-fanout-threshold": 4
+      }
     ],
     "monitoring": {
       "cpu_enabled": false,
