@@ -2,6 +2,50 @@
   {
     "test_name": "FTS Performance Benchmarks",
     "dataset_generation": {
+      "hybrid_data_100k.csv": {
+        "doc_count": 100000,
+        "fields": [
+          {
+            "name": "title",
+            "size": 50,
+            "transforms": [
+              {
+                "type": "proximity_phrase",
+                "term_count": 1,
+                "combinations": 1,
+                "repeats": 1000
+              }
+            ]
+          },
+          {
+            "name": "price",
+            "size": 10,
+            "transforms": [
+              {
+                "type": "numeric_range",
+                "min": 10,
+                "max": 1000
+              }
+            ]
+          },
+          {
+            "name": "category",
+            "size": 30,
+            "transforms": [
+              {
+                "type": "tag_list",
+                "tags": [
+                  "electronics",
+                  "books",
+                  "clothing",
+                  "food",
+                  "sports"
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "field_explosion_50k.xml": {
         "doc_count": 50000,
         "generate_fields": {
@@ -65,6 +109,38 @@
             ]
           }
         ]
+      },
+      "controlled_shared_100k.csv": {
+        "doc_count": 100000,
+        "fields": [
+          {
+            "name": "field1",
+            "size": 50,
+            "transforms": [
+              {
+                "type": "proximity_phrase",
+                "term_count": 1,
+                "combinations": 1,
+                "repeats": 1000
+              }
+            ]
+          }
+        ]
+      },
+      "controlled_diverse_100k.csv": {
+        "doc_count": 100000,
+        "fields": [
+          {
+            "name": "field1",
+            "size": 50,
+            "transforms": [
+              {
+                "type": "diverse_terms",
+                "repeats": 1000
+              }
+            ]
+          }
+        ]
       }
     },
     "query_generation": {
@@ -77,6 +153,30 @@
         "type": "proximity_phrase",
         "doc_count": 100,
         "term_count": 25
+      },
+      "controlled_shared_queries.csv": {
+        "type": "proximity_phrase",
+        "doc_count": 100,
+        "term_count": 1
+      },
+      "controlled_diverse_queries.csv": {
+        "type": "diverse_terms",
+        "doc_count": 100
+      },
+      "prefix_queries.csv": {
+        "type": "prefix",
+        "source": "search_terms.csv",
+        "doc_count": 100
+      },
+      "suffix_queries.csv": {
+        "type": "suffix",
+        "source": "search_terms.csv",
+        "doc_count": 100
+      },
+      "hybrid_queries.csv": {
+        "type": "proximity_phrase",
+        "doc_count": 100,
+        "term_count": 1
       }
     },
     "test_groups": [
@@ -207,6 +307,21 @@
             "duration": 200,
             "warmup": 60,
             "command": "FT.SEARCH rd0 '@field1:\"__field:term1__ __field:term2__\"'",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          },
+          {
+            "id": "i",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "Prefix wildcard - all 50 fields",
+            "dataset": "datasets/prefix_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"__field:term__*\"",
             "options": {
               "": "",
               "NOCONTENT": "_nocontent"
@@ -342,6 +457,220 @@
             "duration": 200,
             "warmup": 60,
             "command": "FT.SEARCH rd0 \"@field1:__field:term1__ @field1:__field:term2__ @field1:__field:term3__ @field1:__field:term4__ @field1:__field:term5__ @field1:__field:term6__ @field1:__field:term7__ @field1:__field:term8__ @field1:__field:term9__ @field1:__field:term10__ @field1:__field:term11__ @field1:__field:term12__ @field1:__field:term13__ @field1:__field:term14__ @field1:__field:term15__ @field1:__field:term16__ @field1:__field:term17__ @field1:__field:term18__ @field1:__field:term19__ @field1:__field:term20__ @field1:__field:term21__ @field1:__field:term22__ @field1:__field:term23__ @field1:__field:term24__ @field1:__field:term25__\" SLOP 3 INORDER",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          }
+        ]
+      },
+      {
+        "group": 5,
+        "description": "Prefix queries - best case (1 combination)",
+        "scenarios": [
+          {
+            "id": "a",
+            "type": "write",
+            "cluster_execution": "single",
+            "setup_commands": [
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT"
+            ],
+            "flush_before": true,
+            "dataset": "datasets/controlled_shared_100k.csv",
+            "maxdocs": 100000,
+            "clients": 1000,
+            "sequential": true,
+            "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
+          },
+          {
+            "id": "b",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "Prefix wildcard - field-specific",
+            "dataset": "datasets/controlled_shared_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"@field1:__field:term1__*\"",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          }
+        ]
+      },
+      {
+        "group": 6,
+        "description": "Prefix queries - worst case (100 combinations)",
+        "scenarios": [
+          {
+            "id": "a",
+            "type": "write",
+            "cluster_execution": "single",
+            "setup_commands": ["FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT"],
+            "flush_before": true,
+            "dataset": "datasets/controlled_diverse_100k.csv",
+            "maxdocs": 100000,
+            "clients": 1000,
+            "sequential": true,
+            "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
+          },
+          {
+            "id": "b",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "Prefix wildcard - field-specific, diverse prefixes",
+            "dataset": "datasets/controlled_diverse_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"@field1:__field:term__*\"",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          }
+        ]
+      },
+      {
+        "group": 7,
+        "description": "Suffix queries (WITHSUFFIXTRIE enabled)",
+        "scenarios": [
+          {
+            "id": "a",
+            "type": "write",
+            "cluster_execution": "single",
+            "setup_commands": ["FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"],
+            "flush_before": true,
+            "dataset": "datasets/controlled_shared_100k.csv",
+            "maxdocs": 100000,
+            "clients": 1000,
+            "sequential": true,
+            "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
+          },
+          {
+            "id": "b",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "Suffix wildcard - all fields",
+            "dataset": "datasets/controlled_shared_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"*__field:term1__\"",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          },
+          {
+            "id": "c",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "Suffix wildcard - field-specific",
+            "dataset": "datasets/controlled_shared_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"@field1:*__field:term1__\"",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          }
+        ]
+      },
+      {
+        "group": 8,
+        "description": "Suffix queries - worst case (diverse suffixes, WITHSUFFIXTRIE)",
+        "scenarios": [
+          {
+            "id": "a",
+            "type": "write",
+            "cluster_execution": "single",
+            "setup_commands": ["FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"],
+            "flush_before": true,
+            "dataset": "datasets/controlled_diverse_100k.csv",
+            "maxdocs": 100000,
+            "clients": 1000,
+            "sequential": true,
+            "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
+          },
+          {
+            "id": "b",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "Suffix wildcard - field-specific, diverse suffixes",
+            "dataset": "datasets/controlled_diverse_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"@field1:*__field:term__\"",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          }
+        ]
+      },
+      {
+        "group": 9,
+        "description": "Hybrid queries (TEXT + NUMERIC + TAG)",
+        "scenarios": [
+          {
+            "id": "a",
+            "type": "write",
+            "cluster_execution": "single",
+            "setup_commands": [
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA title TEXT price NUMERIC category TAG SEPARATOR |"
+            ],
+            "flush_before": true,
+            "dataset": "datasets/hybrid_data_100k.csv",
+            "maxdocs": 100000,
+            "clients": 1000,
+            "sequential": true,
+            "command": "HSET rd0-{tag}:__rand_int__ title \"__field:title__\" price \"__field:price__\" category \"__field:category__\""
+          },
+          {
+            "id": "b",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "TEXT + NUMERIC range filter",
+            "dataset": "datasets/hybrid_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"__field:term__ @price:[100 500]\"",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          },
+          {
+            "id": "c",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "TEXT + TAG filter",
+            "dataset": "datasets/hybrid_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"__field:term__ @category:{electronics}\"",
+            "options": {
+              "": "",
+              "NOCONTENT": "_nocontent"
+            }
+          },
+          {
+            "id": "d",
+            "type": "read",
+            "cluster_execution": "parallel",
+            "description": "TEXT + NUMERIC + TAG combined",
+            "dataset": "datasets/hybrid_queries.csv",
+            "clients": 1000,
+            "duration": 200,
+            "warmup": 60,
+            "command": "FT.SEARCH rd0 \"__field:term__ @price:[50 500] @category:{electronics|books}\"",
             "options": {
               "": "",
               "NOCONTENT": "_nocontent"
