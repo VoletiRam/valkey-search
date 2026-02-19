@@ -640,7 +640,7 @@
             "clients": 1000,
             "duration": 200,
             "warmup": 60,
-            "command": "FT.SEARCH rd0 \"__field:term__ @price:[100 500]\"",
+            "command": "FT.SEARCH rd0 \"__field:term1__ @price:[100 500]\"",
             "options": {
               "": "",
               "NOCONTENT": "_nocontent"
@@ -655,7 +655,7 @@
             "clients": 1000,
             "duration": 200,
             "warmup": 60,
-            "command": "FT.SEARCH rd0 \"__field:term__ @category:{electronics}\"",
+            "command": "FT.SEARCH rd0 \"__field:term1__ @category:{electronics}\"",
             "options": {
               "": "",
               "NOCONTENT": "_nocontent"
@@ -670,7 +670,7 @@
             "clients": 1000,
             "duration": 200,
             "warmup": 60,
-            "command": "FT.SEARCH rd0 \"__field:term__ @price:[50 500] @category:{electronics|books}\"",
+            "command": "FT.SEARCH rd0 \"__field:term1__ @price:[50 500] @category:{electronics|books}\"",
             "options": {
               "": "",
               "NOCONTENT": "_nocontent"
