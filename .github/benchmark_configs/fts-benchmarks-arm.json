@@ -1,6 +1,7 @@
 [
   {
     "test_name": "FTS Performance Benchmarks",
+    "seed": false,
     "dataset_generation": {
       "hybrid_data_100k.csv": {
         "doc_count": 100000,
@@ -110,33 +111,35 @@
           }
         ]
       },
-      "controlled_shared_100k.csv": {
-        "doc_count": 100000,
+      "expansion_best.csv": {
+        "doc_count": 10000,
         "fields": [
           {
             "name": "field1",
             "size": 50,
             "transforms": [
               {
-                "type": "proximity_phrase",
-                "term_count": 1,
-                "combinations": 1,
-                "repeats": 1000
+                "type": "expansion",
+                "expansion_count": 5,
+                "docs_per_expansion": 20,
+                "term_count": 100
               }
             ]
           }
         ]
       },
-      "controlled_diverse_100k.csv": {
-        "doc_count": 100000,
+      "expansion_worst.csv": {
+        "doc_count": 400000,
         "fields": [
           {
             "name": "field1",
-            "size": 50,
+            "size": 500,
             "transforms": [
               {
-                "type": "diverse_terms",
-                "repeats": 1000
+                "type": "expansion",
+                "expansion_count": 200,
+                "docs_per_expansion": 20,
+                "term_count": 100
               }
             ]
           }
@@ -154,23 +157,8 @@
         "doc_count": 100,
         "term_count": 25
       },
-      "controlled_shared_queries.csv": {
-        "type": "proximity_phrase",
-        "doc_count": 100,
-        "term_count": 1
-      },
-      "controlled_diverse_queries.csv": {
-        "type": "diverse_terms",
-        "doc_count": 100
-      },
-      "prefix_queries.csv": {
-        "type": "prefix",
-        "source": "search_terms.csv",
-        "doc_count": 100
-      },
-      "suffix_queries.csv": {
-        "type": "suffix",
-        "source": "search_terms.csv",
+      "expansion_queries.csv": {
+        "type": "expansion",
         "doc_count": 100
       },
       "hybrid_queries.csv": {
@@ -316,7 +304,7 @@
             "id": "i",
             "type": "read",
             "cluster_execution": "parallel",
-            "description": "Prefix wildcard - all 50 fields",
+            "description": "Prefi Jll 50 fields",
             "dataset": "datasets/prefix_queries.csv",
             "clients": 1000,
             "duration": 200,
@@ -466,18 +454,18 @@
       },
       {
         "group": 5,
-        "description": "Prefix queries - best case (1 combination)",
+        "description": "Prefix expansion - best case (5 variants × 20 copies)",
         "scenarios": [
           {
             "id": "a",
             "type": "write",
             "cluster_execution": "single",
             "setup_commands": [
-              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT"
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"
             ],
             "flush_before": true,
-            "dataset": "datasets/controlled_shared_100k.csv",
-            "maxdocs": 100000,
+            "dataset": "datasets/expansion_best.csv",
+            "maxdocs": 10000,
             "clients": 1000,
             "sequential": true,
             "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
@@ -486,12 +474,12 @@
             "id": "b",
             "type": "read",
             "cluster_execution": "parallel",
-            "description": "Prefix wildcard - field-specific",
-            "dataset": "datasets/controlled_shared_queries.csv",
+            "description": "Prefix expansion - 5 variants per term",
+            "dataset": "datasets/expansion_queries.csv",
             "clients": 1000,
             "duration": 200,
             "warmup": 60,
-            "command": "FT.SEARCH rd0 \"@field1:__field:term1__*\"",
+            "command": "FT.SEARCH rd0 \"@field1:__field:term__*\"",
             "options": {
               "": "",
               "NOCONTENT": "_nocontent"
@@ -501,16 +489,18 @@
       },
       {
         "group": 6,
-        "description": "Prefix queries - worst case (100 combinations)",
+        "description": "Prefix expansion - worst case (200 variants × 20 copies)",
         "scenarios": [
           {
             "id": "a",
             "type": "write",
             "cluster_execution": "single",
-            "setup_commands": ["FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT"],
+            "setup_commands": [
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"
+            ],
             "flush_before": true,
-            "dataset": "datasets/controlled_diverse_100k.csv",
-            "maxdocs": 100000,
+            "dataset": "datasets/expansion_worst.csv",
+            "maxdocs": 400000,
             "clients": 1000,
             "sequential": true,
             "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
@@ -519,8 +509,8 @@
             "id": "b",
             "type": "read",
             "cluster_execution": "parallel",
-            "description": "Prefix wildcard - field-specific, diverse prefixes",
-            "dataset": "datasets/controlled_diverse_queries.csv",
+            "description": "Prefix expansion - 200 variants per term",
+            "dataset": "datasets/expansion_queries.csv",
             "clients": 1000,
             "duration": 200,
             "warmup": 60,
@@ -534,16 +524,18 @@
       },
       {
         "group": 7,
-        "description": "Suffix queries (WITHSUFFIXTRIE enabled)",
+        "description": "Suffix expansion - best case (5 variants × 20 copies)",
         "scenarios": [
           {
             "id": "a",
             "type": "write",
             "cluster_execution": "single",
-            "setup_commands": ["FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"],
+            "setup_commands": [
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"
+            ],
             "flush_before": true,
-            "dataset": "datasets/controlled_shared_100k.csv",
-            "maxdocs": 100000,
+            "dataset": "datasets/expansion_best.csv",
+            "maxdocs": 10000,
             "clients": 1000,
             "sequential": true,
             "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
@@ -552,27 +544,12 @@
             "id": "b",
             "type": "read",
             "cluster_execution": "parallel",
-            "description": "Suffix wildcard - all fields",
-            "dataset": "datasets/controlled_shared_queries.csv",
+            "description": "Suffix expansion - 5 variants per term",
+            "dataset": "datasets/expansion_queries.csv",
             "clients": 1000,
             "duration": 200,
             "warmup": 60,
-            "command": "FT.SEARCH rd0 \"*__field:term1__\"",
-            "options": {
-              "": "",
-              "NOCONTENT": "_nocontent"
-            }
-          },
-          {
-            "id": "c",
-            "type": "read",
-            "cluster_execution": "parallel",
-            "description": "Suffix wildcard - field-specific",
-            "dataset": "datasets/controlled_shared_queries.csv",
-            "clients": 1000,
-            "duration": 200,
-            "warmup": 60,
-            "command": "FT.SEARCH rd0 \"@field1:*__field:term1__\"",
+            "command": "FT.SEARCH rd0 \"@field1:*__field:term__\"",
             "options": {
               "": "",
               "NOCONTENT": "_nocontent"
@@ -582,16 +559,18 @@
       },
       {
         "group": 8,
-        "description": "Suffix queries - worst case (diverse suffixes, WITHSUFFIXTRIE)",
+        "description": "Suffix expansion - worst case (200 variants × 20 copies)",
         "scenarios": [
           {
             "id": "a",
             "type": "write",
             "cluster_execution": "single",
-            "setup_commands": ["FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"],
+            "setup_commands": [
+              "FT.CREATE rd0 ON HASH PREFIX 1 rd0- SCHEMA field1 TEXT WITHSUFFIXTRIE"
+            ],
             "flush_before": true,
-            "dataset": "datasets/controlled_diverse_100k.csv",
-            "maxdocs": 100000,
+            "dataset": "datasets/expansion_worst.csv",
+            "maxdocs": 400000,
             "clients": 1000,
             "sequential": true,
             "command": "HSET rd0-{tag}:__rand_int__ field1 \"__field:field1__\""
@@ -600,8 +579,8 @@
             "id": "b",
             "type": "read",
             "cluster_execution": "parallel",
-            "description": "Suffix wildcard - field-specific, diverse suffixes",
-            "dataset": "datasets/controlled_diverse_queries.csv",
+            "description": "Suffix expansion - 200 variants per term",
+            "dataset": "datasets/expansion_queries.csv",
             "clients": 1000,
             "duration": 200,
             "warmup": 60,
