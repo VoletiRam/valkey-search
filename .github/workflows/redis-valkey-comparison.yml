@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: VoletiRam/valkey-perf-benchmark
-          ref: mixed_workload_feature
+          ref: mixed_fuzzy
           path: valkey-perf-benchmark
 
       - name: Setup persistent datasets cache
