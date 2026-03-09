@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: VoletiRam/valkey_ram
-          ref: dataset-support
+          ref: npy_support
           fetch-depth: 0
           path: valkey_ram
 
@@ -69,6 +69,12 @@ jobs:
           path: valkey-search
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Replace benchmark config with fork version (VoletiRam/main_vss)
+        run: |
+          git -C valkey-search fetch https://github.com/VoletiRam/valkey-search.git main_vss
+          git -C valkey-search checkout FETCH_HEAD -- .github/benchmark_configs/fts-benchmarks-arm.json
+          echo "✓ Replaced fts-benchmarks-arm.json from VoletiRam/valkey-search@main_vss"
 
       - name: Checkout valkey-perf-benchmark
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
