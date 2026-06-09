@@ -133,12 +133,9 @@ class FilterParser {
   };
 
   // Decodes the UTF-8 code point at the current position without advancing.
-  // ASCII fast path avoids constructing a Utf8Iterator for the common case.
   // Returns {0, 0} at end-of-input.
   DecodedCodepoint PeekCodepoint() const {
     if (IsEnd()) return {0, 0};
-    uint8_t b0 = static_cast<uint8_t>(expression_[pos_]);
-    if (b0 < 0x80) return {b0, 1};
     utils::Utf8Iterator it(expression_.substr(pos_));
     it.Next();
     return {it.codepoint(), it.byte_len()};
@@ -147,6 +144,17 @@ class FilterParser {
   // Advance pos_ by byte_len bytes — typically the byte_len returned by a
   // preceding PeekCodepoint().
   void Advance(uint8_t byte_len) { pos_ += byte_len; }
+
+  // Appends the UTF-8 bytes of the current code point to dest and advances
+  // pos_ past them. Equivalent to the repeated pattern:
+  //   auto [cp, byte_len] = PeekCodepoint();
+  //   dest.append(expression_.data() + pos_, byte_len);
+  //   Advance(byte_len);
+  void AppendCodepointAndAdvance(std::string& dest) {
+    auto [cp, byte_len] = PeekCodepoint();
+    dest.append(expression_.data() + pos_, byte_len);
+    pos_ += byte_len;
+  }
 
   bool IsEnd() const { return pos_ >= expression_.length(); }
   bool Match(char expected, bool skip_whitespace = true);

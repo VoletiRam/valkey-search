@@ -14,7 +14,6 @@
 #include <optional>
 
 #include "absl/strings/string_view.h"
-#include "src/utils/utf8_iterator.h"
 
 namespace valkey_search {
 namespace utils {
@@ -24,15 +23,39 @@ class Scanner {
   using Char = uint32_t;
 
  private:
-  // Encoding constants used only by PushBackUtf8 (encode path).
-  // The decode path is now handled entirely by Utf8Iterator.
+  // UTF-8 encoding/decoding bit patterns. Scanner has its own self-contained
+  // multi-byte UTF-8 decoder in NextUtf8() because Scanner is the *validation*
+  // layer: it must tolerate invalid bytes by counting them, not crash on them.
+  // Utf8Iterator (used by post-validation callsites) has the opposite
+  // contract — it CHECKs on invalid bytes — so Scanner cannot delegate to it.
   enum : uint32_t {
+    kStart1Mask = 0b10000000,
+    kStart1Value = 0b00000000,
+    kStart2Mask = 0b11100000,
     kStart2Value = 0b11000000,
+    kStart3Mask = 0b11110000,
     kStart3Value = 0b11100000,
+    kStart4Mask = 0b11111000,
     kStart4Value = 0b11110000,
-    kMoreValue = 0b10000000,
     kMoreMask = 0b11000000,
+    kMoreValue = 0b10000000,
   };
+
+  Char GetByte(size_t pos) const { return sv_[pos] & 0xFF; }
+
+  bool IsStart(size_t mask, size_t value) const {
+    return (GetByte(pos_) & mask) == value;
+  }
+
+  Char GetStart(size_t mask) { return GetByte(pos_++) & ~mask; }
+
+  bool IsMore(size_t pos) const {
+    return pos < sv_.size() && ((GetByte(pos) & kMoreMask) == kMoreValue);
+  }
+
+  Char GetMore(char32_t result) {
+    return (result << 6) | (GetByte(pos_++) & ~kMoreMask);
+  }
 
  public:
   Scanner(absl::string_view sv) : sv_(sv) {}
@@ -67,21 +90,27 @@ class Scanner {
     }
   }
 
-  // Decode and advance one UTF-8 code point. Delegates to Utf8Iterator which
-  // is the single source of truth for the decode algorithm.
-  // Utf8Iterator::Next() returns {cp, 1} for both valid ASCII and invalid
-  // bytes; only the latter has cp outside the ASCII range.
+  // Decode and advance one UTF-8 code point. Self-contained multi-byte
+  // decoder that *tolerates* invalid bytes (counts them via
+  // invalid_utf_count_) — Scanner is the validation layer used by
+  // IsValidUtf8(); it must never crash on malformed input.
   Char NextUtf8() {
     if (pos_ >= sv_.size()) {
       return kEOF;
     }
-    Utf8Iterator it(sv_.substr(pos_));
-    it.Next();
-    pos_ += it.byte_len();
-    if (it.byte_len() == 1 && !Utf8Iterator::IsAscii(it.codepoint())) {
-      invalid_utf_count_++;
+    if (IsStart(kStart1Mask, kStart1Value)) {
+      return GetStart(kStart1Mask);
+    } else if (IsStart(kStart2Mask, kStart2Value) && IsMore(pos_ + 1)) {
+      return GetMore(GetStart(kStart2Mask));
+    } else if (IsStart(kStart3Mask, kStart3Value) && IsMore(pos_ + 1) &&
+               IsMore(pos_ + 2)) {
+      return GetMore(GetMore(GetStart(kStart3Mask)));
+    } else if (IsStart(kStart4Mask, kStart4Value) && IsMore(pos_ + 1) &&
+               IsMore(pos_ + 2) && IsMore(pos_ + 3)) {
+      return GetMore(GetMore(GetMore(GetStart(kStart4Mask))));
     }
-    return it.codepoint();
+    invalid_utf_count_++;
+    return GetByte(pos_++) & 0xFF;
   }
 
   Char PeekUtf8() {

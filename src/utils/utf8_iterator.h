@@ -18,8 +18,7 @@ namespace valkey_search::utils {
 //
 // Pre-condition: the input must be valid UTF-8. All callers in this codebase
 // validate text via Lexer::IsValidUtf8() before constructing this iterator.
-// Calling Next() on invalid UTF-8 is a programming error and fires a DCHECK
-// in debug builds.
+// Calling Next() on invalid UTF-8 is a programming error and crashes via CHECK.
 //
 // Typical usage:
 //   Utf8Iterator it(text);
@@ -99,15 +98,11 @@ class Utf8Iterator {
     }
 
     // Invalid byte. Pre-condition violation: callers must validate UTF-8 first.
-    DCHECK(false)
-        << "Utf8Iterator::Next() encountered invalid UTF-8 at byte " << pos_
-        << " (0x" << std::hex << static_cast<unsigned>(b0)
-        << "). Callers must validate input with Lexer::IsValidUtf8().";
-    // Advance 1 byte in release builds to avoid infinite loops.
-    codepoint_ = b0;
-    byte_len_ = 1;
-    ++pos_;
-    return true;
+    // Using CHECK so violations crash loudly rather than silently continuing.
+    CHECK(false) << "Utf8Iterator::Next() encountered invalid UTF-8 at byte "
+                 << pos_ << " (0x" << std::hex << static_cast<unsigned>(b0)
+                 << "). Callers must validate input with Lexer::IsValidUtf8().";
+    return false;  // unreachable — satisfies the compiler
   }
 
   // Current Unicode code point. Valid only after Next() returns true.

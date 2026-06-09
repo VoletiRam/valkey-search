@@ -21,6 +21,10 @@
 
 namespace valkey_search::indexes::text {
 
+// Vector of Unicode code points. Using a typedef to avoid repeating the
+// template arguments everywhere in the fuzzy search DP matrix code.
+using Codepoints = absl::InlinedVector<uint32_t, 32>;
+
 // Fuzzy search using Damerau-Levenshtein distance on RadixTree
 struct FuzzySearch {
   // Returns KeyIterators for all words within edit distance <= max_distance.
@@ -34,7 +38,7 @@ struct FuzzySearch {
         key_iterators;
 
     // Decode pattern to code points so the DP matrix is indexed per character.
-    absl::InlinedVector<uint32_t, 32> pattern_cps;
+    Codepoints pattern_cps;
     {
       utils::Utf8Iterator it(pattern);
       while (it.Next()) {
@@ -75,8 +79,8 @@ struct FuzzySearch {
   //                  required because radix-tree edges may split mid-codepoint.
   //   - DP matrix columns = pattern_cps.size() + 1
   static void SearchRecursive(
-      Rax::PathIterator iter,
-      const absl::InlinedVector<uint32_t, 32>& pattern_cps, size_t max_distance,
+      Rax::PathIterator iter, const Codepoints& pattern_cps,
+      size_t max_distance,
       std::string word,          // Current word being built (raw bytes)
       uint32_t prev_tree_cp,     // Previous code point (for transposition)
       size_t new_word_cp_count,  // Code point count of word

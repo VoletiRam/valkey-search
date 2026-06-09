@@ -535,8 +535,7 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
     if (cp == '\\' || lexer.IsPunctuation(cp)) {
       // If Double backslash, retain the double backslash
       // If Single backslash with punct on right, retain the char on right
-      processed_content.append(expression_.data() + pos_, byte_len);
-      Advance(byte_len);
+      AppendCodepointAndAdvance(processed_content);
       // Continue parsing the same token.
       return true;
     } else {
@@ -547,8 +546,7 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
         return false;
       } else {
         // Backslash not punctuation → keep letter, continue
-        processed_content.append(expression_.data() + pos_, byte_len);
-        Advance(byte_len);
+        AppendCodepointAndAdvance(processed_content);
         return true;
       }
     }
@@ -581,8 +579,7 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseQuotedTextToken(
       if (cp == '"') break;
       if (cp == '\\') continue;  // Don't break on backslash
       if (lexer.IsPunctuation(cp)) break;
-      processed_content.append(expression_.data() + pos_, byte_len);
-      Advance(byte_len);
+      AppendCodepointAndAdvance(processed_content);
     }
   }
   if (processed_content.empty()) {
@@ -684,8 +681,7 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseUnquotedTextToken(
     {
       auto [cp, byte_len] = PeekCodepoint();
       if (lexer.IsPunctuation(cp)) break;
-      processed_content.append(expression_.data() + pos_, byte_len);
-      Advance(byte_len);
+      AppendCodepointAndAdvance(processed_content);
     }
   }
   lexer.NormalizeLowerCaseInPlace(processed_content);
