@@ -436,4 +436,40 @@ TEST_F(TextTest, FuzzySearchCodePointDistance) {
   EXPECT_EQ(fuzzy[0].GetKey()->Str(), "doc:1");
 }
 
+// Damerau-Levenshtein transposition counts as a single edit, and must operate
+// on code points. "café" vs "caéf" swaps the last two code points (é =
+// U+00E9, 2 bytes; f = 1 byte). A byte-wise DP would see a multi-byte
+// scramble; the code-point DP sees one transposition. Distance 1 matches,
+// distance 0 does not.
+TEST_F(TextTest, FuzzySearchMultiByteTransposition) {
+  AddRecordAndCommitKey(StringInternStore::Intern("doc:1"), "café");
+
+  const auto& tree = text_index_schema_->GetTextIndex()->GetPrefix();
+  auto exact = text::FuzzySearch::Search(tree, "caéf", /*max_distance=*/0,
+                                         /*max_words=*/100);
+  EXPECT_EQ(exact.size(), 0u);
+
+  auto fuzzy = text::FuzzySearch::Search(tree, "caéf", /*max_distance=*/1,
+                                         /*max_words=*/100);
+  ASSERT_EQ(fuzzy.size(), 1u);
+  EXPECT_EQ(fuzzy[0].GetKey()->Str(), "doc:1");
+}
+
+// 3-byte code points that share a multi-byte prefix exercise the Rax
+// edge-split decode path. ぁ (U+3041, E3 81 81) and あ (U+3042, E3 81 82)
+// share the first two bytes E3 81, so the radix tree splits the shared prefix
+// onto its own edge and the differing third byte starts the next edge. The
+// fuzzy walker must reassemble the full 3-byte code point across that split
+// rather than decoding partial bytes per edge.
+TEST_F(TextTest, FuzzySearchAcrossThreeByteEdgeSplit) {
+  AddRecordAndCommitKey(StringInternStore::Intern("doc:1"), "ぁ");
+  AddRecordAndCommitKey(StringInternStore::Intern("doc:2"), "あ");
+
+  const auto& tree = text_index_schema_->GetTextIndex()->GetPrefix();
+  auto results = text::FuzzySearch::Search(tree, "ぁ", /*max_distance=*/0,
+                                           /*max_words=*/100);
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].GetKey()->Str(), "doc:1");
+}
+
 }  // namespace valkey_search::indexes

@@ -12,11 +12,12 @@
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
+#include "absl/log/check.h"
 #include "absl/strings/string_view.h"
 #include "invasive_ptr.h"
 #include "posting.h"
 #include "rax_wrapper.h"
-#include "src/utils/utf8_iterator.h"
+#include "src/utils/scanner.h"
 #include "text.h"
 
 namespace valkey_search::indexes::text {
@@ -38,13 +39,20 @@ struct FuzzySearch {
         key_iterators;
 
     // Decode pattern to code points so the DP matrix is indexed per character.
+    // The pattern flows through filter_parser, which has already validated
+    // user input, so a kInvalidCp here is a contract violation — guard it
+    // with CHECK rather than tolerating it.
     Codepoints pattern_cps;
     {
-      utils::Utf8Iterator it(pattern);
-      while (it.Next()) {
-        pattern_cps.push_back(it.codepoint());
+      utils::Scanner s(pattern);
+      utils::Scanner::Char cp;
+      while ((cp = s.NextUtf8()) != utils::Scanner::kEOF) {
+        CHECK(cp != utils::Scanner::kInvalidCp)
+            << "Fuzzy pattern contained invalid UTF-8 after parser validation";
+        pattern_cps.push_back(cp);
       }
     }
+
     size_t pattern_len = pattern_cps.size();
 
     // Dynamic Programming matrix rows for Damerau-Levenshtein algorithm
@@ -68,6 +76,19 @@ struct FuzzySearch {
   }
 
  private:
+  // Decode the code point at `pos` in `text` and advance `pos` past it.
+  // Precondition: caller verified the full sequence is present (see
+  // ExpectedLen) and `text` is validated stored content, so a malformed
+  // sequence here is a contract violation.
+  static uint32_t DecodeAndAdvance(absl::string_view text, size_t& pos) {
+    utils::Scanner s(text.substr(pos));
+    uint32_t cp = s.NextUtf8();
+    CHECK(cp != utils::Scanner::kInvalidCp)
+        << "Fuzzy decoded invalid UTF-8 from validated radix-tree edge";
+    pos += s.LastUtf8ByteLen();
+    return cp;
+  }
+
   // SearchRecursive operates on code points throughout:
   //   - pattern_cps: pattern decoded to uint32_t code points
   //   - prev_tree_cp: last code point consumed from the tree (for
@@ -121,15 +142,11 @@ struct FuzzySearch {
       // sequence so the missing bytes can join from the next edge.
       while (edge_dp_byte_pos < new_word.size()) {
         uint8_t b0 = static_cast<uint8_t>(new_word[edge_dp_byte_pos]);
-        uint8_t need = utils::Utf8Iterator::ExpectedLen(b0);
+        uint8_t need = utils::Scanner::ExpectedLen(b0);
         if (edge_dp_byte_pos + need > new_word.size()) {
-          break;
+          break;  // Partial UTF-8 sequence — wait for next edge to complete it.
         }
-        utils::Utf8Iterator cp_it(
-            absl::string_view(new_word.data() + edge_dp_byte_pos, need));
-        cp_it.Next();
-        uint32_t tree_cp = cp_it.codepoint();
-        edge_dp_byte_pos += cp_it.byte_len();
+        uint32_t tree_cp = DecodeAndAdvance(new_word, edge_dp_byte_pos);
         ++edge_word_cp_count;
 
         // curr[0] = cost of deleting all code points of new_word so far.

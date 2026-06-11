@@ -35,7 +35,7 @@ Tokenization Pipeline:
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "src/index_schema.pb.h"
-#include "src/utils/utf8_iterator.h"
+#include "src/utils/scanner.h"
 
 struct sb_stemmer;
 
@@ -59,7 +59,7 @@ struct PunctuationSet {
   absl::flat_hash_set<uint32_t> non_ascii;  // Code points >= 0x80
 
   bool Contains(uint32_t cp) const {
-    if (utils::Utf8Iterator::IsAscii(cp)) return ascii[cp];
+    if (utils::Scanner::IsAscii(cp)) return ascii[cp];
     return non_ascii.contains(cp);
   }
 };
@@ -93,6 +93,22 @@ struct Lexer {
   data_model::Language language_;
   PunctuationSet punct_set_;
   absl::flat_hash_set<std::string> stop_words_set_;
+
+  // A decoded code point bound to the byte length it occupies, so callers
+  // never advance by a length that doesn't match the code point inspected.
+  struct Decoded {
+    utils::Scanner::Char cp;
+    uint8_t len;
+  };
+
+  // Decode the code point at byte offset `pos` in `text`. Precondition:
+  // IsValidUtf8(text) already passed, so a malformed sequence is a contract
+  // violation (CHECK-guarded). Used only by Tokenize.
+  static Decoded DecodeAt(absl::string_view text, size_t pos);
+
+  // Append the code point's bytes to `word` and advance `pos` past them.
+  static void ConsumeInto(absl::string_view text, size_t& pos, const Decoded& d,
+                          std::string& word);
 
   // UTF-8 processing helpers
   bool IsValidUtf8(absl::string_view text) const;

@@ -531,11 +531,17 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
     return true;
   }
   if (!IsEnd()) {
-    auto [cp, byte_len] = PeekCodepoint();
-    if (cp == '\\' || lexer.IsPunctuation(cp)) {
+    Peeked pk = PeekCodepoint();
+    if (!pk.valid) {
+      // 1.2-compatible tolerance: consume the invalid byte as opaque data.
+      processed_content.push_back(expression_[pos_]);
+      ++pos_;
+      return true;
+    }
+    if (pk.cp == '\\' || lexer.IsPunctuation(pk.cp)) {
       // If Double backslash, retain the double backslash
       // If Single backslash with punct on right, retain the char on right
-      AppendCodepointAndAdvance(processed_content);
+      ConsumePeeked(pk, processed_content);
       // Continue parsing the same token.
       return true;
     } else {
@@ -546,7 +552,7 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
         return false;
       } else {
         // Backslash not punctuation → keep letter, continue
-        AppendCodepointAndAdvance(processed_content);
+        ConsumePeeked(pk, processed_content);
         return true;
       }
     }
@@ -575,11 +581,19 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseQuotedTextToken(
       break;
     }
     {
-      auto [cp, byte_len] = PeekCodepoint();
-      if (cp == '"') break;
-      if (cp == '\\') continue;  // Don't break on backslash
-      if (lexer.IsPunctuation(cp)) break;
-      AppendCodepointAndAdvance(processed_content);
+      Peeked pk = PeekCodepoint();
+      if (!pk.valid) {
+        // 1.2-compatible tolerance: consume the invalid byte as opaque data.
+        processed_content.push_back(expression_[pos_]);
+        ++pos_;
+        continue;
+      }
+      if (pk.cp == '"') break;
+      if (pk.cp == '\\')
+        continue;  // Don't break on backslash; route to
+                   // HandleBackslashEscape on next iteration.
+      if (lexer.IsPunctuation(pk.cp)) break;
+      ConsumePeeked(pk, processed_content);
     }
   }
   if (processed_content.empty()) {
@@ -624,29 +638,36 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseUnquotedTextToken(
     if (!should_continue) {
       break;
     }
-    char ch = Peek();
-    // Break on non text specific query syntax characters.
-    if (ch == ')' || ch == '|' || ch == '(' || ch == '@') {
+    Peeked pk = PeekCodepoint();
+    if (!pk.valid) {
+      // 1.2-compatible tolerance: consume the invalid byte as opaque data.
+      processed_content.push_back(expression_[pos_]);
+      ++pos_;
+      continue;
+    }
+    // Break on non text specific query syntax characters. ASCII code points
+    // compare identically to their byte values.
+    if (pk.cp == ')' || pk.cp == '|' || pk.cp == '(' || pk.cp == '@') {
       break_on_query_syntax = true;
       break;
     }
     // Reject reserved characters in unquoted text
-    if (ch == '{' || ch == '}' || ch == '[' || ch == ']' || ch == ':' ||
-        ch == ';' || ch == '$') {
+    if (pk.cp == '{' || pk.cp == '}' || pk.cp == '[' || pk.cp == ']' ||
+        pk.cp == ':' || pk.cp == ';' || pk.cp == '$') {
       return absl::InvalidArgumentError(
           absl::StrCat("Unexpected character at position ", pos_ + 1, ": `",
                        expression_.substr(pos_, 1), "`"));
     }
     // - characters in the middle of text tokens are not negate. If they are in
     // the beginning, break.
-    if (ch == '-' && processed_content.empty()) {
+    if (pk.cp == '-' && processed_content.empty()) {
       break_on_query_syntax = true;
       break;
     }
     // Break to complete an exact phrase or start a new exact phrase.
-    if (ch == '"') break;
+    if (pk.cp == '"') break;
     // Handle fuzzy token boundary detection
-    if (ch == '%') {
+    if (pk.cp == '%') {
       if (processed_content.empty()) {
         // Leading percent
         while (Match('%', false)) {
@@ -677,12 +698,11 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseUnquotedTextToken(
         break;
       }
     }
-    if (ch == '\\') continue;  // Don't break on backslash
-    {
-      auto [cp, byte_len] = PeekCodepoint();
-      if (lexer.IsPunctuation(cp)) break;
-      AppendCodepointAndAdvance(processed_content);
-    }
+    if (pk.cp == '\\')
+      continue;  // Don't break on backslash; route to
+                 // HandleBackslashEscape on next iteration.
+    if (lexer.IsPunctuation(pk.cp)) break;
+    ConsumePeeked(pk, processed_content);
   }
   lexer.NormalizeLowerCaseInPlace(processed_content);
   FieldMaskPredicate field_mask;
@@ -838,8 +858,9 @@ FilterParser::ParseTextTokens(
     // ، U+060C) is consumed atomically — advancing 1 byte would split the
     // sequence and feed an orphan continuation byte to the next iteration.
     if (token_start == pos_) {
-      auto [cp, byte_len] = PeekCodepoint();
-      Advance(byte_len ? byte_len : 1);
+      Peeked pk = PeekCodepoint();
+      // For malformed input byte_len == 1, so this still advances one byte.
+      SkipPeeked(pk);
     }
   }
   std::unique_ptr<query::Predicate> pred;
