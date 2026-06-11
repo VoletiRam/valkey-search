@@ -534,8 +534,7 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
     Peeked pk = PeekCodepoint();
     if (!pk.valid) {
       // 1.2-compatible tolerance: consume the invalid byte as opaque data.
-      processed_content.push_back(expression_[pos_]);
-      ++pos_;
+      ConsumePeeked(pk, processed_content);
       return true;
     }
     if (pk.cp == '\\' || lexer.IsPunctuation(pk.cp)) {
@@ -584,8 +583,7 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseQuotedTextToken(
       Peeked pk = PeekCodepoint();
       if (!pk.valid) {
         // 1.2-compatible tolerance: consume the invalid byte as opaque data.
-        processed_content.push_back(expression_[pos_]);
-        ++pos_;
+        ConsumePeeked(pk, processed_content);
         continue;
       }
       if (pk.cp == '"') break;
@@ -641,8 +639,7 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseUnquotedTextToken(
     Peeked pk = PeekCodepoint();
     if (!pk.valid) {
       // 1.2-compatible tolerance: consume the invalid byte as opaque data.
-      processed_content.push_back(expression_[pos_]);
-      ++pos_;
+      ConsumePeeked(pk, processed_content);
       continue;
     }
     // Break on non text specific query syntax characters. ASCII code points
