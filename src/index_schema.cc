@@ -45,6 +45,7 @@
 #include "src/indexes/vector_hnsw.h"
 #include "src/keyspace_event_manager.h"
 #include "src/metrics.h"
+#include "src/multi_language.h"
 #include "src/query/search.h"
 #include "src/rdb_serialization.h"
 #include "src/utils/string_interning.h"
@@ -2116,8 +2117,7 @@ absl::StatusOr<vmsdk::ValkeyVersion> IndexSchema::GetMinVersion(
     }
   }
   if (has_text_index) {
-    if (unpacked->language() != data_model::LANGUAGE_UNSPECIFIED &&
-        unpacked->language() != data_model::LANGUAGE_ENGLISH) {
+    if (IsNonEnglishLanguage(unpacked->language())) {
       return kRelease14;
     }
     return kRelease12;
