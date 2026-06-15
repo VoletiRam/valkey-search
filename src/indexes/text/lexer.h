@@ -90,28 +90,11 @@ struct Lexer {
                      InProgressStemMap& stem_mappings) const;
 
  private:
+  bool IsValidUtf8(absl::string_view text) const;
+
   data_model::Language language_;
   PunctuationSet punct_set_;
   absl::flat_hash_set<std::string> stop_words_set_;
-
-  // A decoded code point bound to the byte length it occupies, so callers
-  // never advance by a length that doesn't match the code point inspected.
-  struct Decoded {
-    utils::Scanner::Char cp;
-    uint8_t len;
-  };
-
-  // Decode the code point at byte offset `pos` in `text`. Precondition:
-  // IsValidUtf8(text) already passed, so a malformed sequence is a contract
-  // violation (CHECK-guarded). Used only by Tokenize.
-  static Decoded DecodeAt(absl::string_view text, size_t pos);
-
-  // Append the code point's bytes to `word` and advance `pos` past them.
-  static void ConsumeInto(absl::string_view text, size_t& pos, const Decoded& d,
-                          std::string& word);
-
-  // UTF-8 processing helpers
-  bool IsValidUtf8(absl::string_view text) const;
   // Common stemming logic
   std::string_view DoStemming(absl::string_view word, sb_stemmer* stemmer,
                               uint32_t min_stem_size) const;

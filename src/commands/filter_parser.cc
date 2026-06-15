@@ -532,8 +532,12 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
   }
   if (!IsEnd()) {
     Peeked pk = PeekCodepoint();
-    if (!pk.valid) {
-      // 1.2-compatible tolerance: consume the invalid byte as opaque data.
+    if (!pk.IsValid()) {
+      // TODO(compat): Once valkey-io/valkey-search#1063 merges, reject here
+      // with: return absl::InvalidArgumentError("Invalid UTF-8");
+      // This matches the ingestion path (Lexer::Tokenize) behavior. Currently
+      // tolerated for 1.2 backward compatibility — ICU normalizes the invalid
+      // bytes to U+FFFD which safely matches nothing downstream.
       ConsumePeeked(pk, processed_content);
       return true;
     }
@@ -581,8 +585,12 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseQuotedTextToken(
     }
     {
       Peeked pk = PeekCodepoint();
-      if (!pk.valid) {
-        // 1.2-compatible tolerance: consume the invalid byte as opaque data.
+      if (!pk.IsValid()) {
+        // TODO(compat): Once valkey-io/valkey-search#1063 merges, reject here
+        // with: return absl::InvalidArgumentError("Invalid UTF-8");
+        // This matches the ingestion path (Lexer::Tokenize) behavior. Currently
+        // tolerated for 1.2 backward compatibility — ICU normalizes the invalid
+        // bytes to U+FFFD which safely matches nothing downstream.
         ConsumePeeked(pk, processed_content);
         continue;
       }
@@ -637,8 +645,12 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseUnquotedTextToken(
       break;
     }
     Peeked pk = PeekCodepoint();
-    if (!pk.valid) {
-      // 1.2-compatible tolerance: consume the invalid byte as opaque data.
+    if (!pk.IsValid()) {
+      // TODO(compat): Once valkey-io/valkey-search#1063 merges, reject here
+      // with: return absl::InvalidArgumentError("Invalid UTF-8");
+      // This matches the ingestion path (Lexer::Tokenize) behavior. Currently
+      // tolerated for 1.2 backward compatibility — ICU normalizes the invalid
+      // bytes to U+FFFD which safely matches nothing downstream.
       ConsumePeeked(pk, processed_content);
       continue;
     }
@@ -824,10 +836,10 @@ FilterParser::ParseTextTokens(
   bool in_quotes = false;
   bool exact_phrase = false;
   while (!IsEnd()) {
-    char c = Peek();
-    if (c == '"') {
+    Peeked pk = PeekCodepoint();
+    if (pk.cp == '"') {
       in_quotes = !in_quotes;
-      ++pos_;
+      SkipPeeked(pk);
       if (in_quotes && terms.empty()) {
         exact_phrase = true;
         continue;

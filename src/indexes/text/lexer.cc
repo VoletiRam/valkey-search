@@ -83,20 +83,6 @@ thread_local absl::flat_hash_map<data_model::Language, StemmerPtr> stemmers_;
 
 }  // namespace
 
-Lexer::Decoded Lexer::DecodeAt(absl::string_view text, size_t pos) {
-  utils::Scanner s(text.substr(pos));
-  utils::Scanner::Char cp = s.NextUtf8();
-  CHECK(cp != utils::Scanner::kInvalidCp)
-      << "Tokenize decoded invalid UTF-8 after IsValidUtf8 passed";
-  return {cp, s.LastUtf8ByteLen()};
-}
-
-void Lexer::ConsumeInto(absl::string_view text, size_t& pos, const Decoded& d,
-                        std::string& word) {
-  word.append(text.data() + pos, d.len);
-  pos += d.len;
-}
-
 Lexer::Lexer(data_model::Language language, const std::string& punctuation,
              const std::vector<std::string>& stop_words)
     : language_(language),
@@ -129,9 +115,12 @@ absl::StatusOr<std::vector<std::string>> Lexer::Tokenize(
       if (text[pos] == '\\' && pos + 1 < text.size()) {
         break;  // Let word-building handle the escape.
       }
-      Decoded d = DecodeAt(text, pos);
-      if (!IsPunctuation(d.cp)) break;
-      pos += d.len;
+      utils::Scanner s(text.substr(pos));
+      auto cp = s.NextUtf8();
+      CHECK(cp != utils::Scanner::kInvalidCp)
+          << "Tokenize decoded invalid UTF-8 after IsValidUtf8 passed";
+      if (!IsPunctuation(cp)) break;
+      pos += s.LastUtf8ByteLen();
     }
 
     word.clear();
@@ -141,17 +130,27 @@ absl::StatusOr<std::vector<std::string>> Lexer::Tokenize(
     while (pos < text.size()) {
       if (text[pos] == '\\' && pos + 1 < text.size()) {
         pos++;  // Consume the backslash (a literal ASCII byte).
-        Decoded esc = DecodeAt(text, pos);
-        if (esc.cp != '\\' && !IsPunctuation(esc.cp) && IsPunctuation('\\')) {
+        utils::Scanner s(text.substr(pos));
+        auto esc_cp = s.NextUtf8();
+        CHECK(esc_cp != utils::Scanner::kInvalidCp)
+            << "Tokenize decoded invalid UTF-8 after IsValidUtf8 passed";
+        uint8_t esc_len = s.LastUtf8ByteLen();
+        if (esc_cp != '\\' && !IsPunctuation(esc_cp) && IsPunctuation('\\')) {
           break;  // Backslash is a boundary; leave the escaped char unconsumed.
         }
-        ConsumeInto(text, pos, esc, word);
+        word.append(text.data() + pos, esc_len);
+        pos += esc_len;
         continue;
       }
 
-      Decoded d = DecodeAt(text, pos);
-      if (IsPunctuation(d.cp)) break;
-      ConsumeInto(text, pos, d, word);
+      utils::Scanner s(text.substr(pos));
+      auto cp = s.NextUtf8();
+      CHECK(cp != utils::Scanner::kInvalidCp)
+          << "Tokenize decoded invalid UTF-8 after IsValidUtf8 passed";
+      if (IsPunctuation(cp)) break;
+      uint8_t len = s.LastUtf8ByteLen();
+      word.append(text.data() + pos, len);
+      pos += len;
     }
 
     if (!word.empty()) {

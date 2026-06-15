@@ -129,27 +129,24 @@ class FilterParser {
   char Peek() const { return expression_[pos_]; }
 
   // A decoded-but-not-yet-consumed code point at the current position.
-  // `byte_len` is always >= 1 for a real code point. Use IsEnd() to test for
-  // end-of-input rather than inspecting byte_len.
+  // `byte_len` is always >= 1. Check `cp == utils::Scanner::kInvalidCp` to
+  // detect malformed UTF-8.
   struct Peeked {
     uint32_t cp;
     uint8_t byte_len;
-    bool valid;  // false => malformed UTF-8 at this position (kInvalidCp)
+
+    bool IsValid() const { return cp != utils::Scanner::kInvalidCp; }
   };
 
   // Decode the code point at pos_ without advancing. Caller must ensure
   // !IsEnd(). The query string is the user-input boundary, so malformed UTF-8
-  // is possible and reported via Peeked::valid == false; the caller decides
-  // how to tolerate it (see the token loops).
+  // is possible; the caller decides how to tolerate it (see the token loops).
   Peeked PeekCodepoint() const {
     CHECK(!IsEnd());
     utils::Scanner s(expression_.substr(pos_));
     utils::Scanner::Char cp = s.NextUtf8();
     // !IsEnd() guarantees at least one byte, so cp is never kEOF here.
-    if (cp == utils::Scanner::kInvalidCp) {
-      return {0, s.LastUtf8ByteLen(), /*valid=*/false};
-    }
-    return {static_cast<uint32_t>(cp), s.LastUtf8ByteLen(), /*valid=*/true};
+    return {static_cast<uint32_t>(cp), s.LastUtf8ByteLen()};
   }
 
   // Append the peeked code point's bytes to `dest` and advance past it.
