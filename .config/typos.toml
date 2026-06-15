@@ -18,6 +18,7 @@ extend-ignore-re = [
     ".*unning"
 ]
 [default.extend-words]
+caf = "caf"
 Fo = "Fo"
 InFo = "InFo"
 SeArCh = "SeArCh" 
