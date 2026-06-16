@@ -148,10 +148,8 @@ config::Number& GetMutationWeightTag();
 /// FT.AGGREGATE commands
 config::Number& GetQueryStringDepth();
 
-<<<<<<< HEAD
 /// Return the configuration entry for multi-language support feature flag
 const config::Boolean& GetMultiLanguageSupport();
-=======
 /// Return the configuration entry that controls compatibility-bug emulation.
 /// See COMPATIBILITY.md for the semantics.
 config::Version& GetEmulateRelease();
@@ -166,7 +164,6 @@ bool EnabledInVersion(vmsdk::ValkeyVersion version);
 inline bool EnabledInVersion(int major, int minor, int patch) {
   return EnabledInVersion(vmsdk::ValkeyVersion(major, minor, patch));
 }
->>>>>>> upstream/main
 
 }  // namespace options
 }  // namespace valkey_search
