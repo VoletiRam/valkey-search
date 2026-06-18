@@ -160,12 +160,11 @@ class FilterParser {
   void SkipPeeked(const Peeked& p) { pos_ += p.byte_len; }
 
   // Handle a malformed UTF-8 code point `pk` at the current position in a text
-  // token. Compat-gated (see COMPATIBILITY.md):
-  //   * emulate-release >= 1.4.0: return InvalidArgumentError (reject, matching
-  //     the ingestion path Lexer::Tokenize).
-  //   * emulate-release <  1.4.0: legacy 1.2 behavior — append U+FFFD to `dest`
-  //     (so the term matches nothing), advance past the byte, return OkStatus,
-  //     and bump the per-site compatibility INFO counter.
+  // token. This is the legacy (< 1.4.0) path only: Parse() rejects the entire
+  // expression with InvalidArgumentError before reaching any token-parsing loop
+  // when emulate-release >= 1.4.0, so this function is only called under
+  // legacy emulation. It appends U+FFFD to `dest` (so the term matches
+  // nothing), advances past the malformed byte, and returns OkStatus.
   absl::Status HandleInvalidUtf8(const Peeked& pk, std::string& dest);
 
   bool IsEnd() const { return pos_ >= expression_.length(); }
