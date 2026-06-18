@@ -39,22 +39,22 @@ struct FuzzySearch {
         key_iterators;
 
     // Decode pattern to code points so the DP matrix is indexed per character.
-    // Currently safe: NormalizeLowerCaseInPlace (ICU CaseFoldInPlace) replaces
-    // any invalid bytes with U+FFFD before the pattern reaches here, so
-    // kInvalidCp is unreachable. The 1.2-compatible behavior is to silently
-    // search for U+FFFD (matching nothing).
-    // TODO(compat): After valkey-io/valkey-search#1063 merges, the parser will
-    // reject invalid UTF-8 at the query boundary. At that point this CHECK
-    // becomes a true contract assertion (programming bug if hit). Until then,
-    // keep as CHECK — ICU guarantees valid UTF-8 reaches here.
+    // The pattern reaches here already well-formed UTF-8: the filter parser
+    // resolves malformed bytes at the query boundary (FilterParser::
+    // HandleInvalidUtf8) — rejecting with InvalidArgumentError when
+    // emulate-release >= 1.4.0, or substituting U+FFFD under legacy emulation
+    // so the term matches nothing. kInvalidCp is therefore unreachable here,
+    // and the CHECK is a contract assertion: if it fires, a caller delivered an
+    // unsanitized pattern, which is a programming error.
     Codepoints pattern_cps;
     {
       utils::Scanner s(pattern);
       utils::Scanner::Char cp;
       while ((cp = s.NextUtf8()) != utils::Scanner::kEOF) {
         CHECK(cp != utils::Scanner::kInvalidCp)
-            << "Fuzzy pattern contained invalid UTF-8 — ICU normalization "
-               "should have sanitized this; indicates a code path bypass";
+            << "Fuzzy pattern contained invalid UTF-8 — the filter parser "
+               "should have rejected or substituted it at the query boundary; "
+               "this indicates a code path bypass";
         pattern_cps.push_back(cp);
       }
     }

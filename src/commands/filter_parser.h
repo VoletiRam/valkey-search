@@ -159,6 +159,15 @@ class FilterParser {
   // Advance past the peeked code point without copying it.
   void SkipPeeked(const Peeked& p) { pos_ += p.byte_len; }
 
+  // Handle a malformed UTF-8 code point `pk` at the current position in a text
+  // token. Compat-gated (see COMPATIBILITY.md):
+  //   * emulate-release >= 1.4.0: return InvalidArgumentError (reject, matching
+  //     the ingestion path Lexer::Tokenize).
+  //   * emulate-release <  1.4.0: legacy 1.2 behavior — append U+FFFD to `dest`
+  //     (so the term matches nothing), advance past the byte, return OkStatus,
+  //     and bump the per-site compatibility INFO counter.
+  absl::Status HandleInvalidUtf8(const Peeked& pk, std::string& dest);
+
   bool IsEnd() const { return pos_ >= expression_.length(); }
   bool Match(char expected, bool skip_whitespace = true);
   bool MatchInsensitive(const std::string& expected);

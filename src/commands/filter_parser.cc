@@ -433,6 +433,20 @@ absl::StatusOr<FilterParseResults> FilterParser::Parse() {
     results.is_match_all = true;
     return results;
   }
+  // Upfront UTF-8 validation of the entire query expression, compat-gated.
+  // >= 1.4.0: reject malformed UTF-8 at the highest level (matching the
+  // ingestion pipeline's Lexer::Tokenize which does the same upfront reject).
+  // < 1.4.0: pass through — legacy behavior handles malformed bytes per-token.
+  VMSDK_RETURN_IF_ERROR(VALKEY_SEARCH_COMPATIBILITY_FIX(
+      1, 4, 0, "filter_parser_invalid_utf8_expression",
+      [&]() -> absl::Status {
+        if (!utils::Scanner::IsValidUtf8(expression_)) {
+          return absl::InvalidArgumentError(
+              "Invalid UTF-8 in query expression");
+        }
+        return absl::OkStatus();
+      },
+      [&]() -> absl::Status { return absl::OkStatus(); }));
   filter_identifiers_.clear();
   pos_ = 0;
   VMSDK_ASSIGN_OR_RETURN(auto parse_result, ParseExpression(0));
@@ -534,6 +548,16 @@ absl::StatusOr<std::unique_ptr<query::Predicate>> FilterParser::WrapPredicate(
       logical_operator, std::move(children), options_.slop, options_.inorder);
 };
 
+// Legacy path only (< 1.4.0): substitute U+FFFD for malformed bytes so the
+// token matches nothing. For >= 1.4.0 the upfront validation in Parse()
+// rejects the expression before reaching here.
+absl::Status FilterParser::HandleInvalidUtf8(const Peeked& pk,
+                                             std::string& dest) {
+  utils::Scanner::PushBackUtf8(dest, 0xFFFD);
+  SkipPeeked(pk);
+  return absl::OkStatus();
+}
+
 // Handles backslash escaping for both quoted and unquoted text
 // Escape Syntax:
 // \\ -> \
@@ -549,12 +573,7 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
   if (!IsEnd()) {
     Peeked pk = PeekCodepoint();
     if (!pk.IsValid()) {
-      // TODO(compat): Once valkey-io/valkey-search#1063 merges, reject here
-      // with: return absl::InvalidArgumentError("Invalid UTF-8");
-      // This matches the ingestion path (Lexer::Tokenize) behavior. Currently
-      // tolerated for 1.2 backward compatibility — ICU normalizes the invalid
-      // bytes to U+FFFD which safely matches nothing downstream.
-      ConsumePeeked(pk, processed_content);
+      VMSDK_RETURN_IF_ERROR(HandleInvalidUtf8(pk, processed_content));
       return true;
     }
     if (pk.cp == '\\' || lexer.IsPunctuation(pk.cp)) {
@@ -602,12 +621,7 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseQuotedTextToken(
     {
       Peeked pk = PeekCodepoint();
       if (!pk.IsValid()) {
-        // TODO(compat): Once valkey-io/valkey-search#1063 merges, reject here
-        // with: return absl::InvalidArgumentError("Invalid UTF-8");
-        // This matches the ingestion path (Lexer::Tokenize) behavior. Currently
-        // tolerated for 1.2 backward compatibility — ICU normalizes the invalid
-        // bytes to U+FFFD which safely matches nothing downstream.
-        ConsumePeeked(pk, processed_content);
+        VMSDK_RETURN_IF_ERROR(HandleInvalidUtf8(pk, processed_content));
         continue;
       }
       if (pk.cp == '"') break;
@@ -662,12 +676,7 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseUnquotedTextToken(
     }
     Peeked pk = PeekCodepoint();
     if (!pk.IsValid()) {
-      // TODO(compat): Once valkey-io/valkey-search#1063 merges, reject here
-      // with: return absl::InvalidArgumentError("Invalid UTF-8");
-      // This matches the ingestion path (Lexer::Tokenize) behavior. Currently
-      // tolerated for 1.2 backward compatibility — ICU normalizes the invalid
-      // bytes to U+FFFD which safely matches nothing downstream.
-      ConsumePeeked(pk, processed_content);
+      VMSDK_RETURN_IF_ERROR(HandleInvalidUtf8(pk, processed_content));
       continue;
     }
     // Break on non text specific query syntax characters. ASCII code points

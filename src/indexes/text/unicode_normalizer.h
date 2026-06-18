@@ -17,9 +17,6 @@ enum class NormalizationForm {
 
 class UnicodeNormalizer {
  public:
-  /// Initialize ICU for module-wide usage (call once at module startup)
-  static void Initialize();
-
   /// Performs Unicode case folding in-place on an existing string.
   /// Minimizes heap allocations by reusing the provided string's buffer.
   /// This is preferred for high-throughput tokenization loops.
