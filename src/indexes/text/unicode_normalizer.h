@@ -24,19 +24,17 @@ class UnicodeNormalizer {
   /// content is replaced with the folded version.
   static void CaseFoldInPlace(std::string& str);
 
-  // Planned multi-language support APIs (ICU-backed, not implemented yet)
-  // These show reviewers exactly which ICU functionality we will use
-
-  /// Unicode normalization for consistent text comparison across languages
-  /// Uses ICU Normalizer2 for diacritic handling and text standardization
-  /// @param text Input text to normalize
+  /// Unicode normalization for consistent text comparison across languages.
+  /// Uses ICU Normalizer2::normalizeUTF8 (UTF-8-native, no UnicodeString
+  /// round-trip). Precondition: `text` is well-formed UTF-8 — the ICU API
+  /// does not substitute U+FFFD for malformed input.
+  /// @param text Input text to normalize (must be well-formed UTF-8)
   /// @param form Normalization form (NFC, NFKC, NFD, NFKD)
   /// @return Normalized text string
-  /// @example Normalize("résumé", NormalizationForm::NFD) removes diacritics
   static std::string Normalize(absl::string_view text, NormalizationForm form);
 
   /// Word boundary detection for CJK and complex script languages
-  /// Uses ICU BreakIterator with built-in dictionaries (cjdict.dict ~2MB for
+
   /// CJK) Handles Chinese, Japanese, Korean word segmentation without spaces
   /// @param text Input text for word segmentation
   /// @param locale Language locale (e.g., "zh", "ja", "ko", "" for auto-detect)
