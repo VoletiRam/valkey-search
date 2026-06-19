@@ -433,15 +433,10 @@ absl::StatusOr<FilterParseResults> FilterParser::Parse() {
     results.is_match_all = true;
     return results;
   }
-  // Upfront malformed-UTF-8 handling for the entire query expression,
-  // compat-gated. Covers all field types (text, tag, numeric) before any
-  // field-specific parsing, mirroring the ingestion pipeline's Lexer::Tokenize
-  // upfront gate. Handling the whole expression once here means the token loops
-  // never have to cope with malformed bytes (PeekCodepoint stays valid).
-  //   >= 1.4.0: reject malformed UTF-8 with InvalidArgumentError.
-  //   <  1.4.0: reproduce 1.2 behavior — substitute U+FFFD for malformed bytes
-  //             (so malformed terms match nothing) and parse the sanitized
-  //             copy.
+  // Malformed UTF-8, compat-gated (see COMPATIBILITY.md):
+  //   >= 1.4.0: reject the whole expression (all field types).
+  //   <  1.4.0: 1.2 behavior — only TEXT tokens substitute U+FFFD (below);
+  //             tag/numeric keep raw bytes for exact match.
   if (!utils::Scanner::IsValidUtf8(expression_)) {
     VMSDK_RETURN_IF_ERROR(VALKEY_SEARCH_COMPATIBILITY_FIX(
         1, 4, 0, "filter_parser_invalid_utf8_expression",
@@ -449,12 +444,7 @@ absl::StatusOr<FilterParseResults> FilterParser::Parse() {
           return absl::InvalidArgumentError(
               "Invalid UTF-8 in query expression");
         },
-        [&]() -> absl::Status {
-          sanitized_expression_ =
-              utils::Scanner::ReplaceInvalidUtf8(expression_);
-          expression_ = sanitized_expression_;
-          return absl::OkStatus();
-        }));
+        []() -> absl::Status { return absl::OkStatus(); }));
   }
   filter_identifiers_.clear();
   pos_ = 0;
@@ -571,6 +561,10 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
   }
   if (!IsEnd()) {
     Peeked pk = PeekCodepoint();
+    if (!pk.IsValid()) {
+      ReplaceInvalidUtf8(pk, processed_content);
+      return true;
+    }
     if (pk.cp == '\\' || lexer.IsPunctuation(pk.cp)) {
       // If Double backslash, retain the double backslash
       // If Single backslash with punct on right, retain the char on right
@@ -615,6 +609,10 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseQuotedTextToken(
     }
     {
       Peeked pk = PeekCodepoint();
+      if (!pk.IsValid()) {
+        ReplaceInvalidUtf8(pk, processed_content);
+        continue;
+      }
       if (pk.cp == '"') break;
       if (pk.cp == '\\')
         continue;  // Don't break on backslash; route to
@@ -666,6 +664,10 @@ absl::StatusOr<FilterParser::TokenResult> FilterParser::ParseUnquotedTextToken(
       break;
     }
     Peeked pk = PeekCodepoint();
+    if (!pk.IsValid()) {
+      ReplaceInvalidUtf8(pk, processed_content);
+      continue;
+    }
     // Break on non text specific query syntax characters. ASCII code points
     // compare identically to their byte values.
     if (pk.cp == ')' || pk.cp == '|' || pk.cp == '(' || pk.cp == '@') {

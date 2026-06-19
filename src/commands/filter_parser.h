@@ -82,10 +82,6 @@ class FilterParser {
   const TextParsingOptions& options_;
   const IndexSchema& index_schema_;
   absl::string_view expression_;
-  // Owns the sanitized expression on the legacy (< 1.4.0) path when the input
-  // contained malformed UTF-8; `expression_` is repointed at it. Empty (and
-  // unused) on the common well-formed path and on the >= 1.4.0 reject path.
-  std::string sanitized_expression_;
   size_t pos_{0};
   size_t node_count_{0};
   absl::flat_hash_set<std::string> filter_identifiers_;
@@ -162,6 +158,14 @@ class FilterParser {
 
   // Advance past the peeked code point without copying it.
   void SkipPeeked(const Peeked& p) { pos_ += p.byte_len; }
+
+  // Replace a malformed code point with U+FFFD and skip it. Legacy (< 1.4.0)
+  // text-token path only; >= 1.4.0 rejects upfront in Parse(). Mirrors
+  // Scanner::ReplaceInvalidUtf8, applied per token here.
+  void ReplaceInvalidUtf8(const Peeked& p, std::string& dest) {
+    utils::Scanner::PushBackUtf8(dest, 0xFFFD);
+    SkipPeeked(p);
+  }
 
   bool IsEnd() const { return pos_ >= expression_.length(); }
   bool Match(char expected, bool skip_whitespace = true);

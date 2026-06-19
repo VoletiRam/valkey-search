@@ -27,11 +27,19 @@
 #include "src/schema_manager.h"
 #include "src/utils/scanner.h"
 #include "src/valkey_search_options.h"
+#include "src/version.h"
+#include "vmsdk/src/info.h"
 #include "vmsdk/src/managed_pointers.h"
 #include "vmsdk/src/status/status_macros.h"
 #include "vmsdk/src/type_conversions.h"
 
 namespace valkey_search::coordinator {
+
+// Counts legacy (< 1.4.0) inter-node predicates whose malformed UTF-8 was
+// tolerated via U+FFFD substitution. Mirrors the client gate's compat counter.
+static vmsdk::info_field::Integer grpc_predicate_invalid_utf8_legacy(
+    "compatibility", "compatibility-grpc_predicate_invalid_utf8",
+    vmsdk::info_field::IntegerBuilder().App());
 
 void SortByToGRPC(const std::optional<query::SortByParameter>& sortby,
                   SearchIndexPartitionRequest* request) {
@@ -60,37 +68,37 @@ std::optional<query::SortByParameter> SortByFromGRPC(
 
 namespace {
 
-// Returns the user-supplied text content carried by a leaf predicate that will
-// later be decoded as UTF-8 (and in fuzzy's case, CHECK-fails on malformed
-// input). Composite predicates (AND/OR/NEGATE) carry no content of their own —
-// their children are validated when recursed into. Returns empty for those and
-// for non-text predicates (numeric).
-absl::string_view PredicateTextContent(const Predicate& predicate) {
+// Text content of a leaf predicate, with `is_tag` so callers can apply the
+// legacy policy (substitute text, keep tag raw). Empty for composite/numeric.
+struct PredicateText {
+  absl::string_view content;
+  bool is_tag = false;
+};
+
+PredicateText GetPredicateText(const Predicate& predicate) {
   switch (predicate.predicate_case()) {
     case Predicate::kTag:
-      return predicate.tag().raw_tag_string();
+      return {predicate.tag().raw_tag_string(), /*is_tag=*/true};
     case Predicate::kTerm:
-      return predicate.term().content();
+      return {predicate.term().content(), false};
     case Predicate::kPrefix:
-      return predicate.prefix().content();
+      return {predicate.prefix().content(), false};
     case Predicate::kSuffix:
-      return predicate.suffix().content();
+      return {predicate.suffix().content(), false};
     case Predicate::kInfix:
-      return predicate.infix().content();
+      return {predicate.infix().content(), false};
     case Predicate::kFuzzy:
-      return predicate.fuzzy().content();
+      return {predicate.fuzzy().content(), false};
     default:
-      return absl::string_view();
+      return {};
   }
 }
 
-// Overwrites the leaf predicate's text content field in place. Used by the
-// legacy compat path to write back the U+FFFD-sanitized content.
+// Overwrites a TEXT leaf predicate's content field in place. Used by the legacy
+// compat path to write back the U+FFFD-sanitized content. Tag is intentionally
+// absent — tags keep their raw bytes on the legacy path.
 void SetPredicateTextContent(Predicate& predicate, std::string content) {
   switch (predicate.predicate_case()) {
-    case Predicate::kTag:
-      predicate.mutable_tag()->set_raw_tag_string(std::move(content));
-      break;
     case Predicate::kTerm:
       predicate.mutable_term()->set_content(std::move(content));
       break;
@@ -116,33 +124,25 @@ void SetPredicateTextContent(Predicate& predicate, std::string content) {
 absl::StatusOr<std::unique_ptr<query::Predicate>> GRPCPredicateToPredicate(
     const Predicate& predicate, std::shared_ptr<IndexSchema> index_schema,
     absl::flat_hash_set<std::string>& attribute_identifiers) {
-  // Malformed-UTF-8 handling for inter-node requests. Client queries are
-  // validated by FilterParser::Parse, but predicates arriving over gRPC are
-  // built straight from the protobuf and skip that gate; downstream decoding
-  // (notably FuzzySearch::Search) CHECK-fails on malformed UTF-8. This is the
-  // single recursive chokepoint, so one check per node covers every
-  // text-bearing predicate type (term/prefix/suffix/infix/fuzzy/tag); composite
-  // nodes carry no content and are covered via recursion.
-  //
-  // Compat-gated (see COMPATIBILITY.md), matching the FilterParser client gate:
-  //   >= 1.4.0: reject with InvalidArgumentError.
-  //   <  1.4.0: reproduce 1.2 behavior — substitute U+FFFD so the term matches
-  //             nothing (the query still succeeds), then re-dispatch on the
-  //             sanitized predicate.
-  absl::string_view text_content = PredicateTextContent(predicate);
-  if (!text_content.empty() && !utils::Scanner::IsValidUtf8(text_content)) {
-    return VALKEY_SEARCH_COMPATIBILITY_FIX(
-        1, 4, 0, "grpc_predicate_invalid_utf8",
-        [&]() -> absl::StatusOr<std::unique_ptr<query::Predicate>> {
-          return absl::InvalidArgumentError("Invalid UTF-8 in query predicate");
-        },
-        [&]() -> absl::StatusOr<std::unique_ptr<query::Predicate>> {
-          Predicate sanitized = predicate;
-          SetPredicateTextContent(
-              sanitized, utils::Scanner::ReplaceInvalidUtf8(text_content));
-          return GRPCPredicateToPredicate(sanitized, index_schema,
-                                          attribute_identifiers);
-        });
+  // Inter-node predicates are built straight from the protobuf, skipping
+  // FilterParser::Parse's UTF-8 gate; FuzzySearch::Search CHECK-fails on
+  // malformed input. This recursive chokepoint validates each node (composites
+  // carry no content and recurse). Compat-gated (see COMPATIBILITY.md):
+  //   >= 1.4.0: reject malformed text AND tag.
+  //   <  1.4.0: 1.2 behavior — substitute U+FFFD into text; leave tag raw.
+  PredicateText text = GetPredicateText(predicate);
+  if (!text.content.empty() && !utils::Scanner::IsValidUtf8(text.content)) {
+    if (options::EnabledInVersion(kRelease14)) {
+      return absl::InvalidArgumentError("Invalid UTF-8 in query predicate");
+    }
+    if (!text.is_tag) {
+      grpc_predicate_invalid_utf8_legacy.Increment();
+      Predicate sanitized = predicate;
+      SetPredicateTextContent(sanitized,
+                              utils::Scanner::ReplaceInvalidUtf8(text.content));
+      return GRPCPredicateToPredicate(sanitized, index_schema,
+                                      attribute_identifiers);
+    }
   }
   switch (predicate.predicate_case()) {
     case Predicate::kTag: {

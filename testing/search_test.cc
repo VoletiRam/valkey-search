@@ -1510,5 +1510,29 @@ TEST_F(GRPCPredicateUtf8LegacyTest, MalformedFuzzyToleratedViaSubstitution) {
   EXPECT_NE(result.value(), nullptr);
 }
 
+// Legacy (< 1.4.0): a malformed TAG keeps its raw bytes (no U+FFFD
+// substitution) so it exact-matches a raw-stored tag, as in 1.2. Asserts the
+// raw byte survived — ok()+non-null alone would not distinguish raw from
+// substituted. This inter-node branch is not exercised by the client-path
+// integration tests.
+TEST_F(GRPCPredicateUtf8LegacyTest, MalformedTagToleratedRaw) {
+  auto index_schema = CreateIndexSchema(kIndexSchemaName).value();
+  InitIndexSchema(index_schema.get());
+  absl::flat_hash_set<std::string> identifiers;
+
+  coordinator::Predicate predicate;
+  auto *tag = predicate.mutable_tag();
+  tag->set_attribute_alias("tag_index_100_15");
+  tag->set_raw_tag_string("bad\x80");  // stray continuation byte
+
+  auto result = coordinator::GRPCPredicateToPredicate(predicate, index_schema,
+                                                      identifiers);
+  ASSERT_TRUE(result.ok()) << result.status().message();
+  auto *tag_predicate =
+      dynamic_cast<query::TagPredicate *>(result.value().get());
+  ASSERT_NE(tag_predicate, nullptr);
+  EXPECT_EQ(tag_predicate->GetTagString(), "bad\x80");  // raw, not U+FFFD
+}
+
 }  // namespace
 }  // namespace valkey_search
