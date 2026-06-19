@@ -62,35 +62,32 @@ std::optional<query::SortByParameter> SortByFromGRPC(
 
 namespace {
 
-// Text content of a leaf predicate, with `is_tag` so callers can apply the
-// legacy policy (substitute text, keep tag raw). Empty for composite/numeric.
-struct PredicateText {
-  absl::string_view content;
-  bool is_tag = false;
-};
-
-PredicateText GetPredicateText(const Predicate& predicate) {
+// Text content of a leaf predicate that must be valid UTF-8. Empty for
+// composite/numeric predicates. Tag content is included so the reject gate is
+// comprehensive; callers derive tag-ness from predicate_case() to apply the
+// legacy policy (substitute text, keep tag raw).
+absl::string_view GetPredicateText(const Predicate& predicate) {
   switch (predicate.predicate_case()) {
     case Predicate::kTag:
-      return {predicate.tag().raw_tag_string(), /*is_tag=*/true};
+      return predicate.tag().raw_tag_string();
     case Predicate::kTerm:
-      return {predicate.term().content(), false};
+      return predicate.term().content();
     case Predicate::kPrefix:
-      return {predicate.prefix().content(), false};
+      return predicate.prefix().content();
     case Predicate::kSuffix:
-      return {predicate.suffix().content(), false};
+      return predicate.suffix().content();
     case Predicate::kInfix:
-      return {predicate.infix().content(), false};
+      return predicate.infix().content();
     case Predicate::kFuzzy:
-      return {predicate.fuzzy().content(), false};
+      return predicate.fuzzy().content();
     default:
-      return {};
+      return absl::string_view();
   }
 }
 
-// Overwrites a TEXT leaf predicate's content field in place. Used by the legacy
-// compat path to write back the U+FFFD-sanitized content. Tag is intentionally
-// absent — tags keep their raw bytes on the legacy path.
+// Overwrites a TEXT leaf predicate's content field in place, used by the legacy
+// path to write back U+FFFD-sanitized content. Must not be called for tag (tags
+// keep raw bytes) or non-text predicates.
 void SetPredicateTextContent(Predicate& predicate, std::string content) {
   switch (predicate.predicate_case()) {
     case Predicate::kTerm:
@@ -109,7 +106,7 @@ void SetPredicateTextContent(Predicate& predicate, std::string content) {
       predicate.mutable_fuzzy()->set_content(std::move(content));
       break;
     default:
-      break;
+      CHECK(false) << "SetPredicateTextContent called for a non-text predicate";
   }
 }
 
@@ -124,19 +121,23 @@ absl::StatusOr<std::unique_ptr<query::Predicate>> GRPCPredicateToPredicate(
   // carry no content and recurse). Compat-gated (see COMPATIBILITY.md):
   //   >= 1.4.0: reject malformed text AND tag.
   //   <  1.4.0: 1.2 behavior — substitute U+FFFD into text; leave tag raw.
-  PredicateText text = GetPredicateText(predicate);
-  if (!text.content.empty() && !utils::Scanner::IsValidUtf8(text.content)) {
+  absl::string_view text = GetPredicateText(predicate);
+  if (!text.empty() && !utils::Scanner::IsValidUtf8(text)) {
     if (options::EnabledInVersion(kRelease14)) {
       return absl::InvalidArgumentError("Invalid UTF-8 in query predicate");
     }
-    if (!text.is_tag) {
-      static vmsdk::info_field::Integer grpc_predicate_invalid_utf8_legacy(
-          "compatibility", "compatibility-grpc_predicate_invalid_utf8",
-          vmsdk::info_field::IntegerBuilder().App());
-      grpc_predicate_invalid_utf8_legacy.Increment();
+    // Legacy: count every malformed-UTF-8 predicate for visibility. Registered
+    // lazily (on first occurrence) to mirror the client gate's compat counter.
+    static vmsdk::info_field::Integer grpc_predicate_invalid_utf8_legacy(
+        "compatibility", "compatibility-grpc_predicate_invalid_utf8",
+        vmsdk::info_field::IntegerBuilder().App());
+    grpc_predicate_invalid_utf8_legacy.Increment();
+    // Substitute U+FFFD for text predicates (so the term matches nothing); tags
+    // keep their raw bytes to exact-match a raw-stored tag.
+    if (predicate.predicate_case() != Predicate::kTag) {
       Predicate sanitized = predicate;
       SetPredicateTextContent(sanitized,
-                              utils::Scanner::ReplaceInvalidUtf8(text.content));
+                              utils::Scanner::ReplaceInvalidUtf8(text));
       return GRPCPredicateToPredicate(sanitized, index_schema,
                                       attribute_identifiers);
     }

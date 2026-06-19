@@ -1,6 +1,7 @@
 #include "src/indexes/text/unicode_normalizer.h"
 
 #include <cstdint>
+#include <limits>
 #include <string>
 
 #include "absl/log/check.h"
@@ -34,6 +35,11 @@ const icu::Normalizer2* InstanceFor(NormalizationForm form, UErrorCode& ec) {
 }
 
 icu::StringPiece ToStringPiece(absl::string_view s) {
+  // ICU's StringPiece length is int32_t. Guard against silent truncation of an
+  // oversized input rather than passing a wrong length into ICU. Not reachable
+  // with real query/document sizes; a hit indicates a caller-side problem.
+  CHECK_LE(s.size(), static_cast<size_t>(std::numeric_limits<int32_t>::max()))
+      << "Text too large for ICU (" << s.size() << " bytes)";
   return icu::StringPiece(s.data(), static_cast<int32_t>(s.size()));
 }
 
