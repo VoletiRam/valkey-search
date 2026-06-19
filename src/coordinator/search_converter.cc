@@ -35,12 +35,6 @@
 
 namespace valkey_search::coordinator {
 
-// Counts legacy (< 1.4.0) inter-node predicates whose malformed UTF-8 was
-// tolerated via U+FFFD substitution. Mirrors the client gate's compat counter.
-static vmsdk::info_field::Integer grpc_predicate_invalid_utf8_legacy(
-    "compatibility", "compatibility-grpc_predicate_invalid_utf8",
-    vmsdk::info_field::IntegerBuilder().App());
-
 void SortByToGRPC(const std::optional<query::SortByParameter>& sortby,
                   SearchIndexPartitionRequest* request) {
   if (!sortby.has_value()) {
@@ -136,6 +130,9 @@ absl::StatusOr<std::unique_ptr<query::Predicate>> GRPCPredicateToPredicate(
       return absl::InvalidArgumentError("Invalid UTF-8 in query predicate");
     }
     if (!text.is_tag) {
+      static vmsdk::info_field::Integer grpc_predicate_invalid_utf8_legacy(
+          "compatibility", "compatibility-grpc_predicate_invalid_utf8",
+          vmsdk::info_field::IntegerBuilder().App());
       grpc_predicate_invalid_utf8_legacy.Increment();
       Predicate sanitized = predicate;
       SetPredicateTextContent(sanitized,
