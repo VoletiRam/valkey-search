@@ -25,6 +25,8 @@
 #include "src/query/predicate.h"
 #include "src/query/search.h"
 #include "src/schema_manager.h"
+#include "src/utils/scanner.h"
+#include "src/valkey_search_options.h"
 #include "vmsdk/src/managed_pointers.h"
 #include "vmsdk/src/status/status_macros.h"
 #include "vmsdk/src/type_conversions.h"
@@ -56,9 +58,92 @@ std::optional<query::SortByParameter> SortByFromGRPC(
   return sortby;
 }
 
+namespace {
+
+// Returns the user-supplied text content carried by a leaf predicate that will
+// later be decoded as UTF-8 (and in fuzzy's case, CHECK-fails on malformed
+// input). Composite predicates (AND/OR/NEGATE) carry no content of their own —
+// their children are validated when recursed into. Returns empty for those and
+// for non-text predicates (numeric).
+absl::string_view PredicateTextContent(const Predicate& predicate) {
+  switch (predicate.predicate_case()) {
+    case Predicate::kTag:
+      return predicate.tag().raw_tag_string();
+    case Predicate::kTerm:
+      return predicate.term().content();
+    case Predicate::kPrefix:
+      return predicate.prefix().content();
+    case Predicate::kSuffix:
+      return predicate.suffix().content();
+    case Predicate::kInfix:
+      return predicate.infix().content();
+    case Predicate::kFuzzy:
+      return predicate.fuzzy().content();
+    default:
+      return absl::string_view();
+  }
+}
+
+// Overwrites the leaf predicate's text content field in place. Used by the
+// legacy compat path to write back the U+FFFD-sanitized content.
+void SetPredicateTextContent(Predicate& predicate, std::string content) {
+  switch (predicate.predicate_case()) {
+    case Predicate::kTag:
+      predicate.mutable_tag()->set_raw_tag_string(std::move(content));
+      break;
+    case Predicate::kTerm:
+      predicate.mutable_term()->set_content(std::move(content));
+      break;
+    case Predicate::kPrefix:
+      predicate.mutable_prefix()->set_content(std::move(content));
+      break;
+    case Predicate::kSuffix:
+      predicate.mutable_suffix()->set_content(std::move(content));
+      break;
+    case Predicate::kInfix:
+      predicate.mutable_infix()->set_content(std::move(content));
+      break;
+    case Predicate::kFuzzy:
+      predicate.mutable_fuzzy()->set_content(std::move(content));
+      break;
+    default:
+      break;
+  }
+}
+
+}  // namespace
+
 absl::StatusOr<std::unique_ptr<query::Predicate>> GRPCPredicateToPredicate(
     const Predicate& predicate, std::shared_ptr<IndexSchema> index_schema,
     absl::flat_hash_set<std::string>& attribute_identifiers) {
+  // Malformed-UTF-8 handling for inter-node requests. Client queries are
+  // validated by FilterParser::Parse, but predicates arriving over gRPC are
+  // built straight from the protobuf and skip that gate; downstream decoding
+  // (notably FuzzySearch::Search) CHECK-fails on malformed UTF-8. This is the
+  // single recursive chokepoint, so one check per node covers every
+  // text-bearing predicate type (term/prefix/suffix/infix/fuzzy/tag); composite
+  // nodes carry no content and are covered via recursion.
+  //
+  // Compat-gated (see COMPATIBILITY.md), matching the FilterParser client gate:
+  //   >= 1.4.0: reject with InvalidArgumentError.
+  //   <  1.4.0: reproduce 1.2 behavior — substitute U+FFFD so the term matches
+  //             nothing (the query still succeeds), then re-dispatch on the
+  //             sanitized predicate.
+  absl::string_view text_content = PredicateTextContent(predicate);
+  if (!text_content.empty() && !utils::Scanner::IsValidUtf8(text_content)) {
+    return VALKEY_SEARCH_COMPATIBILITY_FIX(
+        1, 4, 0, "grpc_predicate_invalid_utf8",
+        [&]() -> absl::StatusOr<std::unique_ptr<query::Predicate>> {
+          return absl::InvalidArgumentError("Invalid UTF-8 in query predicate");
+        },
+        [&]() -> absl::StatusOr<std::unique_ptr<query::Predicate>> {
+          Predicate sanitized = predicate;
+          SetPredicateTextContent(
+              sanitized, utils::Scanner::ReplaceInvalidUtf8(text_content));
+          return GRPCPredicateToPredicate(sanitized, index_schema,
+                                          attribute_identifiers);
+        });
+  }
   switch (predicate.predicate_case()) {
     case Predicate::kTag: {
       VMSDK_ASSIGN_OR_RETURN(

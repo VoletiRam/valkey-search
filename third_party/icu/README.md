@@ -40,6 +40,7 @@ std::string s = "Straße";
 UnicodeNormalizer::CaseFoldInPlace(s);  // -> "strasse"
 
 // Unicode normalization (e.g. NFC) so canonically-equivalent forms compare equal.
+std::string decomposed = "cafe\xCC\x81";  // "café" with combining acute U+0301
 std::string nfc = UnicodeNormalizer::Normalize(decomposed, NormalizationForm::NFC);
 ```
 

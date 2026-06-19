@@ -39,13 +39,14 @@ struct FuzzySearch {
         key_iterators;
 
     // Decode pattern to code points so the DP matrix is indexed per character.
-    // The pattern reaches here already well-formed UTF-8: the filter parser
-    // resolves malformed bytes at the query boundary (FilterParser::
-    // HandleInvalidUtf8) — rejecting with InvalidArgumentError when
-    // emulate-release >= 1.4.0, or substituting U+FFFD under legacy emulation
-    // so the term matches nothing. kInvalidCp is therefore unreachable here,
-    // and the CHECK is a contract assertion: if it fires, a caller delivered an
-    // unsanitized pattern, which is a programming error.
+    // The pattern reaches here already well-formed UTF-8. Both entry points
+    // resolve malformed bytes upstream, compat-gated (>= 1.4.0 rejects with
+    // InvalidArgumentError; < 1.4.0 substitutes U+FFFD so the term matches
+    // nothing): client queries via FilterParser::Parse's upfront gate, and
+    // inter-node requests via GRPCPredicateToPredicate in search_converter.cc.
+    // kInvalidCp is therefore unreachable here, and the CHECK is a contract
+    // assertion: if it fires, a caller delivered an unsanitized pattern, which
+    // is a programming error.
     Codepoints pattern_cps;
     {
       utils::Scanner s(pattern);

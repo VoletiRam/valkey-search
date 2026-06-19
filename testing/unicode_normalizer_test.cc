@@ -34,6 +34,13 @@ constexpr absl::string_view kKafBase = "\xD9\x83";
 constexpr absl::string_view kKafPresentationForm = "\xEF\xBB\x9B";
 // Latin small ligature fi (U+FB01) and its NFKC expansion "fi".
 constexpr absl::string_view kLigatureFi = "\xEF\xAC\x81";
+// "été" with MIXED encodings in one token: precomposed é (C3 A9) + "t" (74) +
+// decomposed e + combining acute (65 CC 81). NFC must produce a uniform
+// precomposed result regardless of each character's input form.
+constexpr absl::string_view kEteMixed =
+    "\xC3\xA9t"
+    "e\xCC\x81";
+constexpr absl::string_view kEtePrecomposed = "\xC3\xA9t\xC3\xA9";
 
 struct NormalizeCase {
   std::string name;
@@ -96,6 +103,12 @@ INSTANTIATE_TEST_SUITE_P(
          "fi"},
         {"nfc_keeps_fi_ligature", std::string(kLigatureFi),
          NormalizationForm::NFC, std::string(kLigatureFi)},
+
+        // Mixed precomposed + decomposed in one token: NFC unifies both to the
+        // precomposed form, so concatenated text from different sources
+        // matches.
+        {"nfc_mixed_forms_unify", std::string(kEteMixed),
+         NormalizationForm::NFC, std::string(kEtePrecomposed)},
     }),
     [](const ::testing::TestParamInfo<NormalizeCase>& info) {
       return info.param.name;
@@ -132,6 +145,24 @@ TEST(CaseFoldInPlaceTest, UnchangedFoldingBehavior) {
       "e";  // "Straße" (split avoids greedy \x escape)
   UnicodeNormalizer::CaseFoldInPlace(s);
   EXPECT_EQ(s, "strasse");
+}
+
+// Turkish dotted/dotless I, folded LOCALE-INDEPENDENTLY (our CaseFoldInPlace is
+// the Unicode default fold, not Turkish-locale-aware). This documents and locks
+// in current behavior; when locale-aware folding is added later, this test will
+// flag the change so it gets compatibility treatment.
+//   İ (U+0130, capital I with dot above) -> i (U+0069) + combining dot above
+//      (U+0307). The default fold decomposes it; it does NOT become plain "i".
+//   ı (U+0131, dotless small i) -> unchanged (no case mapping under default
+//   fold).
+TEST(CaseFoldInPlaceTest, TurkishDottedAndDotlessILocaleIndependent) {
+  std::string dotted_capital = "\xC4\xB0";  // İ U+0130
+  UnicodeNormalizer::CaseFoldInPlace(dotted_capital);
+  EXPECT_EQ(dotted_capital, "i\xCC\x87");  // U+0069 U+0307
+
+  std::string dotless_small = "\xC4\xB1";  // ı U+0131
+  UnicodeNormalizer::CaseFoldInPlace(dotless_small);
+  EXPECT_EQ(dotless_small, "\xC4\xB1");  // unchanged
 }
 
 }  // namespace

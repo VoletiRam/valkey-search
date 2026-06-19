@@ -1893,7 +1893,17 @@ TEST_F(FilterMalformedUtf8CompatTest, ToleratesWhenEmulatingLegacyRelease) {
   FilterParser parser(*schema, filter, options);
   auto parse_results = parser.Parse();
   ASSERT_TRUE(parse_results.ok()) << parse_results.status().message();
-  EXPECT_NE(parse_results.value().root_predicate, nullptr);
+  ASSERT_NE(parse_results.value().root_predicate, nullptr);
+
+  // Legacy behavior must not just succeed — the malformed byte 0xC3 must have
+  // been replaced with U+FFFD (EF BF BD), so the resulting term matches nothing
+  // rather than carrying raw invalid bytes downstream.
+  std::string tree =
+      PrintPredicateTree(parse_results.value().root_predicate.get());
+  EXPECT_NE(tree.find("\xEF\xBF\xBD"), std::string::npos)
+      << "expected U+FFFD replacement in tree: " << tree;
+  EXPECT_EQ(tree.find('\xC3'), std::string::npos)
+      << "raw malformed byte must not survive: " << tree;
 }
 
 }  // namespace
