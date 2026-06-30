@@ -135,8 +135,4 @@ target_link_libraries(text PUBLIC valkey_module)
 target_link_libraries(text PUBLIC snowball)
 target_link_libraries(text PUBLIC scanner)
 target_link_libraries(text PUBLIC icu)
-<<<<<<< HEAD
-
-=======
 target_link_libraries(text PUBLIC rax_lib)
->>>>>>> upstream/main

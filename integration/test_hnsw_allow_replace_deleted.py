@@ -165,11 +165,7 @@ class TestReplaceDeletedOnLoad(ValkeySearchTestCaseDebugMode):
         client = self.server.get_new_client()
 
         waiters.wait_for_true(
-<<<<<<< HEAD
-            lambda: hnsw_index.backfill_complete(client), timeout=30
-=======
             lambda: hnsw_index.backfill_complete(client)
->>>>>>> upstream/main
         )
 
         # Add new vectors — these should reuse deleted slots

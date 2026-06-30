@@ -835,12 +835,7 @@ SerializationRange SearchResult::GetSerializationRange(
 }
 
 absl::Status Search(SearchParameters &parameters, SearchMode search_mode) {
-<<<<<<< HEAD
-  auto &time_sliced_mutex = parameters.index_schema->GetTimeSlicedMutex();
-  vmsdk::ReaderMutexLock lock(&time_sliced_mutex);
-=======
   vmsdk::ReaderMutexLock lock(&parameters.index_schema->GetTimeSlicedMutex());
->>>>>>> upstream/main
   ++Metrics::GetStats().time_slice_queries;
   // Handle OOM for search requests, defends against request
   // coming from the coordinator

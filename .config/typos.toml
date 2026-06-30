@@ -40,9 +40,6 @@ extend-ignore-re = [
     "bubu",
     "Teser",
     "hel",
-<<<<<<< HEAD
     'caf\\xC3\\xA9',
-=======
->>>>>>> upstream/main
     "eit_.*"
 ]

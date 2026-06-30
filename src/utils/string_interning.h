@@ -624,8 +624,6 @@ class BagOfInternedStringPtrs {
     std::swap(storage_, other.storage_);
   }
 
-<<<<<<< HEAD
-=======
   // Construct a bag that takes ownership of the given encoded storage value
   // (typically obtained from a prior Release() or held in an external 8-byte
   // slot such as a rax tree value pointer). The storage value must be either
@@ -648,7 +646,6 @@ class BagOfInternedStringPtrs {
     return s;
   }
 
->>>>>>> upstream/main
   // Test-only: returns the current representation. Not part of the public
   // contract -- intended for white-box assertions that promote/demote
   // transitions happen at the expected boundaries.

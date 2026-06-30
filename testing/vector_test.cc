@@ -726,8 +726,6 @@ ABSL_NO_THREAD_SAFETY_ANALYSIS {
   EXPECT_EQ(Metrics::GetStats().reclaimable_memory, baseline);
 }
 
-<<<<<<< HEAD
-=======
 // offsetData_ and the element stride must be 8-byte aligned so the vector
 // pointer read/write is atomic on ARM64 and avoids a torn-pointer crash.
 TEST_F(VectorIndexTest, OffsetDataIsPointerAlignedOnCreate) {
@@ -790,7 +788,6 @@ TEST_F(VectorIndexTest, LoadRecomputesAlignedOffsetForOldSnapshot) {
   EXPECT_EQ(algo.size_data_per_element_ % alignof(char*), 0u);
 }
 
->>>>>>> upstream/main
 }  // namespace
 
 }  // namespace valkey_search::indexes

@@ -93,31 +93,15 @@ class Tag : public IndexBase {
   std::optional<absl::flat_hash_set<absl::string_view>> GetValue(
       const InternedStringPtr& key,
       bool& case_sensitive) const ABSL_NO_THREAD_SAFETY_ANALYSIS;
-<<<<<<< HEAD
-  using KeySet = BagOfInternedStringPtrs;
-  using PatriciaTreeIndex =
-      PatriciaTree<InternedStringPtr, absl::Hash<InternedStringPtr>,
-                   std::equal_to<InternedStringPtr>, KeySet>;
-  using PatriciaNodeIndex =
-      PatriciaNode<InternedStringPtr, absl::Hash<InternedStringPtr>,
-                   std::equal_to<InternedStringPtr>, KeySet>;
-=======
->>>>>>> upstream/main
 
   // Iterator yielded by EntriesFetcher::Begin(). Walks a vector of rax slots
   // (each slot's 8 bytes encode a BagOfInternedStringPtrs); for negated
   // queries, also walks an extras vector of untracked keys.
   class EntriesFetcherIterator : public EntriesFetcherIteratorBase {
    public:
-<<<<<<< HEAD
-    EntriesFetcherIterator(const PatriciaTreeIndex& tree,
-                           absl::flat_hash_set<PatriciaNodeIndex*>& entries,
-                           const KeySet& untracked_keys, bool negate);
-=======
     EntriesFetcherIterator(const std::vector<void*>& slots,
                            const std::vector<InternedStringPtr>& extras);
     ~EntriesFetcherIterator() override;
->>>>>>> upstream/main
     bool Done() const override;
     void Next() override;
     const InternedStringPtr& operator*() const override;
@@ -125,25 +109,6 @@ class Tag : public IndexBase {
    private:
     void AdvanceToNextNonEmpty();
 
-<<<<<<< HEAD
-    // Full-tree root iterator used exclusively by the negated path.
-    // Only constructed by EnsureNegateRootIter() on first negated
-    // iteration — non-negated queries never create this.
-    std::optional<PatriciaTreeIndex::PrefixSubTreeIterator> negate_root_iter_;
-
-    // The set of Patricia nodes matching the query tags. For non-negated
-    // queries, we iterate these directly. For negated queries, these are
-    // the nodes to *exclude* during the full-tree walk.
-    absl::flat_hash_set<PatriciaNodeIndex*>& entries_;
-
-    PatriciaNodeIndex* next_node_{nullptr};
-    KeySet::const_iterator next_iter_;
-    const KeySet& untracked_keys_;
-    bool negate_;
-    std::optional<KeySet::const_iterator> untracked_keys_iter_;
-    void NextNegate();
-    void EnsureNegateRootIter();
-=======
     const std::vector<void*>& slots_;
     const std::vector<InternedStringPtr>& extras_;
     size_t slot_idx_{0};
@@ -155,30 +120,10 @@ class Tag : public IndexBase {
     BagOfInternedStringPtrs::const_iterator bag_it_;
     BagOfInternedStringPtrs::const_iterator bag_end_;
     InternedStringPtr current_;
->>>>>>> upstream/main
   };
 
   class EntriesFetcher : public EntriesFetcherBase {
    public:
-<<<<<<< HEAD
-    EntriesFetcher(const PatriciaTreeIndex& tree,
-                   absl::flat_hash_set<PatriciaNodeIndex*> entries, size_t size,
-                   bool negate, const KeySet& untracked_keys)
-        : tree_(tree),
-          size_(size),
-          entries_(entries),
-          negate_(negate),
-          untracked_keys_(untracked_keys){};
-    size_t Size() const override;
-    std::unique_ptr<EntriesFetcherIteratorBase> Begin() override;
-
-   private:
-    const PatriciaTreeIndex& tree_;
-    size_t size_{0};
-    absl::flat_hash_set<PatriciaNodeIndex*> entries_;
-    bool negate_;
-    const KeySet& untracked_keys_;
-=======
     EntriesFetcher(std::vector<void*> matched_slots,
                    std::vector<InternedStringPtr> extras, size_t size)
         : size_(size),
@@ -191,7 +136,6 @@ class Tag : public IndexBase {
     size_t size_;
     std::vector<void*> matched_slots_;
     std::vector<InternedStringPtr> extras_;
->>>>>>> upstream/main
   };
 
   // Kept virtual so unit tests can mock Search; no production subclass.
@@ -223,10 +167,6 @@ class Tag : public IndexBase {
   };
   InternedStringHashMap<TagInfo> tracked_tags_by_keys_
       ABSL_GUARDED_BY(index_mutex_);
-<<<<<<< HEAD
-  // untracked and tracked_ keys are mutually exclusive.
-=======
->>>>>>> upstream/main
   KeySet untracked_keys_ ABSL_GUARDED_BY(index_mutex_);
   const char separator_;
   const bool case_sensitive_;
