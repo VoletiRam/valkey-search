@@ -707,6 +707,7 @@ config::Number& GetMutationWeightTag() {
   return dynamic_cast<config::Number&>(*mutation_weight_tag);
 }
 
+<<<<<<< HEAD
 /// Register the "--multi-language-support" flag. Controls whether non-English
 /// text indexes can be created. Marked as Dev() so it can only be set at
 /// startup (or at runtime when debug-mode is enabled).
@@ -719,6 +720,8 @@ const vmsdk::config::Boolean& GetMultiLanguageSupport() {
   return dynamic_cast<const vmsdk::config::Boolean&>(*multi_language_support);
 }
 
+=======
+>>>>>>> upstream/main
 /// Register the "emulate-release" flag (see COMPATIBILITY.md).
 /// Default: current major.0.0 (SemVer-preserving when no opt-in).
 /// Min:     1.0.0 (oldest release whose behavior we can emulate).

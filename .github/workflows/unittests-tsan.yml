@@ -3,7 +3,10 @@ name: unittests-tsan
 on:
   pull_request:
     branches:
+<<<<<<< HEAD
       - multi-language-support
+=======
+>>>>>>> upstream/main
       - main
       - "[0-9].[0-9]"
     paths-ignore:
@@ -11,7 +14,10 @@ on:
       - '**/00-RELEASENOTES'
   push:
     branches:
+<<<<<<< HEAD
       - multi-language-support
+=======
+>>>>>>> upstream/main
       - main
       - "[0-9].[0-9]"
     paths-ignore:
