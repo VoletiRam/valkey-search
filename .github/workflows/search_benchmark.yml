@@ -66,8 +66,8 @@ jobs:
       - name: Checkout valkey-search
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
-          repository: valkey-io/valkey-search
-          ref: main
+          repository: VoletiRam/valkey-search
+          ref: 335865382b8a7c120d0e673fe6d9f68c73f6e53a
           path: valkey-search
           fetch-depth: 0
           persist-credentials: false
