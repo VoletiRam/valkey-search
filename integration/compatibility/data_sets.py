@@ -577,6 +577,48 @@ TEXT_DATASETS_MULTILANG = {
     },
 }
 
+# Multi-language punctuation datasets — mirrors the English 'punctuation' dataset
+# but uses non-ASCII punctuation characters from each language's configured punct
+# set (e.g. French guillemets «», em-dash —, curly quotes).  Title field has
+# unescaped values (punct splits tokens); body field has backslash-escaped values
+# (punct kept inside tokens).
+TEXT_DATASETS_MULTILANG_PUNCTUATION = {
+    # French typographic punctuation: « » – — … ' ' " "
+    'french punctuation': {
+        'schema': TEXT_SCHEMA,
+        'field_values': {
+            'title': [
+                # Unescaped — these split into multiple tokens
+                'liberté«égalité',
+                'fraternité»justice',
+                'château–village',
+                'musée—galerie',
+                'forêt…prairie',
+                'médecin\u2018chirurgien',
+                'professeur\u2019étudiant',
+                'boulanger\u201cpâtissier',
+                'ingénieur\u201darchitecte',
+            ],
+            'body': [
+                # Backslash-escaped — punct kept inside token
+                'liberté\\«égalité',
+                'fraternité\\»justice',
+                'château\\–village',
+                'musée\\—galerie',
+                'forêt\\…prairie',
+                'médecin\\\u2018chirurgien',
+                'professeur\\\u2019étudiant',
+                'boulanger\\\u201cpâtissier',
+                'ingénieur\\\u201darchitecte',
+            ],
+            'color': ['rouge', 'bleu', 'vert'],
+            'price': (0, 10)
+        }
+    },
+}
+
+TEXT_DATASETS_MULTILANG.update(TEXT_DATASETS_MULTILANG_PUNCTUATION)
+
 # Merge multilang datasets into TEXT_DATASETS so existing code paths work unchanged
 TEXT_DATASETS.update(TEXT_DATASETS_MULTILANG)
 
@@ -1127,6 +1169,7 @@ DATASET_LANGUAGE_MAP = {
     'dutch text': 'dutch',
     'indonesian text': 'indonesian',
     'arabic text': 'arabic',
+    'french punctuation': 'french',
 }
 
 

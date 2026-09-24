@@ -579,7 +579,8 @@ class TestMultiLangTextSearchCompatibility(BaseCompatibilityTest):
         self.answers.append(answer)
 
     def _run_test(self, builder_fn, data_set_name, key_type, dialect, schema_type,
-                  language, inorder=False, slop=False, field=None, vocab_override=None):
+                  language, inorder=False, slop=False, field=None, vocab_override=None,
+                  exclude_all=False):
         """Run a test with given term builder function against a language dataset."""
         self.setup_data(data_set_name, key_type, schema_type)
         rng = random.Random(self.TEXT_QUERY_TEST_SEED)
@@ -603,6 +604,19 @@ class TestMultiLangTextSearchCompatibility(BaseCompatibilityTest):
                 if current_query in seen:
                     continue
                 seen.add(current_query)
+
+                if exclude_all:
+                    excluded_args = ["FT.SEARCH", f"{key_type}_idx1", current_query, "DIALECT", str(dialect)]
+                    self.answers.append({
+                        "cmd": excluded_args,
+                        "key_type": self.key_type,
+                        "data_set_name": self.data_set_name,
+                        "schema_type": self.schema_type,
+                        "testname": os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0],
+                        "excluded": True,
+                    })
+                    query_count += 1
+                    continue
 
                 args = ["FT.SEARCH", f"{key_type}_idx1", current_query]
                 if inorder:
@@ -653,4 +667,36 @@ class TestMultiLangTextSearchCompatibility(BaseCompatibilityTest):
             gen_fuzzy_1, dataset, key_type, dialect, schema_type,
             language, vocab_override=safe_vocab
         )
+
+    # ========================================================================
+    # Punctuation / escape tests — non-ASCII punct (mirrors English
+    # test_text_search_unescaped / test_text_search_escaped)
+    # ========================================================================
+
+    def test_multilang_unescaped(self, key_type, dialect, schema_type, language):
+        """Test unescaped non-ASCII punctuation in title field (French dataset).
+
+        Excluded: Redis treats non-ASCII punctuation (U+2019, U+2014, U+00AB,
+        etc.) as regular characters, keeping e.g. ``professeur\u2019étudiant``
+        as a single token.  Valkey recognises them as language-specific
+        punctuation and splits on them, producing different search results.
+        See known_differences.md §4.
+        """
+        if language != "french":
+            pytest.skip("punctuation dataset only available for french")
+        self._run_test(gen_unescaped_word, "french punctuation", key_type, dialect,
+                       schema_type, language, field='title', exclude_all=True)
+
+    def test_multilang_escaped(self, key_type, dialect, schema_type, language):
+        """Test escaped non-ASCII punctuation in body field (French dataset).
+
+        Excluded: Redis does not support backslash-escaping of non-ASCII
+        punctuation characters and returns 0 results for every such query.
+        Valkey correctly resolves the escape, keeping the punctuation as part
+        of the token.  See known_differences.md §4.
+        """
+        if language != "french":
+            pytest.skip("punctuation dataset only available for french")
+        self._run_test(gen_escaped_word, "french punctuation", key_type, dialect,
+                       schema_type, language, field='body', exclude_all=True)
 
