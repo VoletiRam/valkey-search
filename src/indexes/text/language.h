@@ -89,6 +89,36 @@ inline PunctuationSet BuildPunctuationSet(const std::string& punctuation) {
   return result;
 }
 
+// Resolves a backslash escape at text[0..] (position AFTER the backslash).
+// Both the ingestion tokenizer (SegmentInternal) and the query filter parser
+// (HandleBackslashEscape) share this logic so that ASCII and non-ASCII escaped
+// punctuation are handled identically.
+//
+// Returns:
+//   > 0 : number of bytes consumed; caller should append text[0..return_value)
+//   == 0 : break the current token (backslash acted as word boundary)
+inline uint8_t ResolveBackslashEscape(absl::string_view text,
+                                      const PunctuationSet& punct) {
+  if (text.empty()) return 0;
+
+  uint8_t lead = static_cast<uint8_t>(text[0]);
+  if (lead < 0x80) {
+    // ASCII: escaped backslash or escaped punctuation → append 1 byte.
+    if (lead == '\\' || punct.Contains(lead)) return 1;
+    // Non-punct after backslash: if backslash itself is punct → break token.
+    return punct.Contains(static_cast<unsigned char>('\\')) ? 0 : 1;
+  }
+
+  // Non-ASCII: decode full codepoint so multi-byte punctuation (e.g. Arabic
+  // ، U+060C) is recognized — same as the ASCII path above.
+  utils::Scanner s(text);
+  auto cp = s.NextUtf8();
+  uint8_t len = s.LastUtf8ByteLen();
+  if (cp == utils::Scanner::kInvalidCp) return len;  // malformed → append raw
+  if (cp == '\\' || punct.Contains(static_cast<uint32_t>(cp))) return len;
+  return punct.Contains(static_cast<unsigned char>('\\')) ? 0 : len;
+}
+
 constexpr size_t kInProgressStemVariantsInlineCapacity = 4;
 
 using InProgressStemMap = absl::flat_hash_map<

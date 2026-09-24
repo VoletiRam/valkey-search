@@ -604,28 +604,23 @@ absl::StatusOr<bool> FilterParser::HandleBackslashEscape(
     return true;
   }
   if (!IsEnd()) {
-    char next_ch = Peek();
-    if (next_ch == '\\' ||
-        punct.Contains(static_cast<unsigned char>(next_ch))) {
-      // If Double backslash, retain the double backslash
-      // If Single backslash with punct on right, retain the char on right
-      processed_content.push_back(next_ch);
-      ++pos_;
-      // Continue parsing the same token.
-      return true;
-    } else {
-      // Backslash before non-punctuation
-      if (punct.Contains(static_cast<unsigned char>('\\'))) {
-        // Backslash is punctuation → break to new token (standard unicode
-        // segmentation)
-        return false;
-      } else {
-        // Backslash not punctuation → keep letter, continue
-        processed_content.push_back(next_ch);
-        ++pos_;
-        return true;
-      }
+    // Delegate to the shared escape resolver so that both ASCII and non-ASCII
+    // escaped punctuation (e.g. Arabic ، U+060C) are handled consistently
+    // with the ingestion tokenizer.
+    uint8_t n =
+        indexes::text::ResolveBackslashEscape(expression_.substr(pos_), punct);
+    if (n == 0) {
+      // Backslash is punctuation → break to new token (standard unicode
+      // segmentation)
+      return false;
     }
+    // If Double backslash, retain the double backslash
+    // If Single backslash with punct on right, retain the char on right
+    // If Backslash not punctuation → keep letter, continue
+    processed_content.append(expression_.data() + pos_, n);
+    pos_ += n;
+    // Continue parsing the same token.
+    return true;
   } else {
     // Unescaped backslash at end of input is invalid.
     return absl::InvalidArgumentError(

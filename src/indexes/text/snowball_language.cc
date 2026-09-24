@@ -92,26 +92,11 @@ void SnowballLanguage::SegmentInternal(absl::string_view text,
     while (pos < input.size()) {
       // Handle backslash escape (ingestion path only).
       if (handle_escapes && input[pos] == '\\' && pos + 1 < input.size()) {
-        pos++;
-        uint8_t esc_lead = static_cast<uint8_t>(input[pos]);
-        if (esc_lead < 0x80) {
-          bool esc_is_delim = punct_set_.Contains(esc_lead);
-          if (esc_lead != '\\' && !esc_is_delim && punct_set_.Contains('\\')) {
-            break;
-          }
-          word.push_back(input[pos]);
-          pos++;
-        } else {
-          utils::Scanner s(input.substr(pos));
-          auto esc_cp = s.NextUtf8();
-          uint8_t esc_len = s.LastUtf8ByteLen();
-          if (esc_cp != '\\' && !punct_set_.Contains(esc_cp) &&
-              punct_set_.Contains('\\')) {
-            break;
-          }
-          word.append(input.data() + pos, esc_len);
-          pos += esc_len;
-        }
+        pos++;  // skip backslash
+        uint8_t n = ResolveBackslashEscape(input.substr(pos), punct_set_);
+        if (n == 0) break;
+        word.append(input.data() + pos, n);
+        pos += n;
         continue;
       }
 
