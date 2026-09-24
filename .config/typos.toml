@@ -10,6 +10,7 @@ extend-exclude = [
     "testing/snowball_language_test.cc",
     "testing/snowball_stem_test.cc",
     "integration/compatibility/data_sets.py"
+    "rfc/multi-language-support.md"
 ]
 
 [default]

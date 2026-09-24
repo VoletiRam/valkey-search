@@ -421,8 +421,8 @@ TEST_F(TextTest, FuzzySearchAcrossMultiByteEdgeSplit) {
   const auto &tree = text_index_schema_->GetTextIndex()->GetPrefix();
   auto results = text::FuzzySearch::Search(tree, "بالعالم", /*max_distance=*/0,
                                            /*max_words=*/100);
-  ASSERT_EQ(results.size(), 1u);
-  EXPECT_EQ(results[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(results.key_iterators.size(), 1u);
+  EXPECT_EQ(results.key_iterators[0].GetKey()->Str(), "doc:1");
 }
 
 // Edit distance is in code points, not bytes. "¡hola" and "hola" differ by
@@ -434,12 +434,12 @@ TEST_F(TextTest, FuzzySearchCodePointDistance) {
   const auto &tree = text_index_schema_->GetTextIndex()->GetPrefix();
   auto exact = text::FuzzySearch::Search(tree, "hola", /*max_distance=*/0,
                                          /*max_words=*/100);
-  EXPECT_EQ(exact.size(), 0u);
+  EXPECT_EQ(exact.key_iterators.size(), 0u);
 
   auto fuzzy = text::FuzzySearch::Search(tree, "hola", /*max_distance=*/1,
                                          /*max_words=*/100);
-  ASSERT_EQ(fuzzy.size(), 1u);
-  EXPECT_EQ(fuzzy[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(fuzzy.key_iterators.size(), 1u);
+  EXPECT_EQ(fuzzy.key_iterators[0].GetKey()->Str(), "doc:1");
 }
 
 // Damerau-Levenshtein transposition counts as a single edit, and must operate
@@ -453,12 +453,12 @@ TEST_F(TextTest, FuzzySearchMultiByteTransposition) {
   const auto &tree = text_index_schema_->GetTextIndex()->GetPrefix();
   auto exact = text::FuzzySearch::Search(tree, "caéf", /*max_distance=*/0,
                                          /*max_words=*/100);
-  EXPECT_EQ(exact.size(), 0u);
+  EXPECT_EQ(exact.key_iterators.size(), 0u);
 
   auto fuzzy = text::FuzzySearch::Search(tree, "caéf", /*max_distance=*/1,
                                          /*max_words=*/100);
-  ASSERT_EQ(fuzzy.size(), 1u);
-  EXPECT_EQ(fuzzy[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(fuzzy.key_iterators.size(), 1u);
+  EXPECT_EQ(fuzzy.key_iterators[0].GetKey()->Str(), "doc:1");
 }
 
 // 3-byte code points that share a multi-byte prefix exercise the Rax
@@ -474,8 +474,8 @@ TEST_F(TextTest, FuzzySearchAcrossThreeByteEdgeSplit) {
   const auto &tree = text_index_schema_->GetTextIndex()->GetPrefix();
   auto results = text::FuzzySearch::Search(tree, "ぁ", /*max_distance=*/0,
                                            /*max_words=*/100);
-  ASSERT_EQ(results.size(), 1u);
-  EXPECT_EQ(results[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(results.key_iterators.size(), 1u);
+  EXPECT_EQ(results.key_iterators[0].GetKey()->Str(), "doc:1");
 }
 
 // ==========================================================================
@@ -497,12 +497,12 @@ TEST_F(TextTest, FuzzyTranspositionAcrossEdgeSplit) {
   // The transposition crosses the edge split at "caf"|"é..." vs "caf"|"x".
   auto exact = text::FuzzySearch::Search(tree, "caéf", /*max_distance=*/0,
                                          /*max_words=*/100);
-  EXPECT_EQ(exact.size(), 0u);
+  EXPECT_EQ(exact.key_iterators.size(), 0u);
 
   auto fuzzy = text::FuzzySearch::Search(tree, "caéf", /*max_distance=*/1,
                                          /*max_words=*/100);
-  ASSERT_EQ(fuzzy.size(), 1u);
-  EXPECT_EQ(fuzzy[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(fuzzy.key_iterators.size(), 1u);
+  EXPECT_EQ(fuzzy.key_iterators[0].GetKey()->Str(), "doc:1");
 }
 
 // ==========================================================================
@@ -523,14 +523,14 @@ TEST_F(TextTest, FuzzySearchAcrossFourByteEdgeSplit) {
   // Exact match for 😀 at distance 0
   auto results = text::FuzzySearch::Search(
       tree, "\xF0\x9F\x98\x80", /*max_distance=*/0, /*max_words=*/100);
-  ASSERT_EQ(results.size(), 1u);
-  EXPECT_EQ(results[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(results.key_iterators.size(), 1u);
+  EXPECT_EQ(results.key_iterators[0].GetKey()->Str(), "doc:1");
 
   // Distance 1: searching for 😀 should find both 😀 (exact) and 😁
   // (1 substitution in code point space)
   auto fuzzy = text::FuzzySearch::Search(tree, "\xF0\x9F\x98\x80",
                                          /*max_distance=*/1, /*max_words=*/100);
-  ASSERT_EQ(fuzzy.size(), 2u);
+  ASSERT_EQ(fuzzy.key_iterators.size(), 2u);
 }
 
 // ==========================================================================
@@ -552,16 +552,16 @@ TEST_F(TextTest, FuzzyPruningOnPartialEdge) {
   // (completely different code points, distance would be >> 0).
   auto results = text::FuzzySearch::Search(tree, "ぁ", /*max_distance=*/0,
                                            /*max_words=*/100);
-  ASSERT_EQ(results.size(), 1u);
-  EXPECT_EQ(results[0].GetKey()->Str(), "doc:ja1");
+  ASSERT_EQ(results.key_iterators.size(), 1u);
+  EXPECT_EQ(results.key_iterators[0].GetKey()->Str(), "doc:ja1");
 
   // At distance 1, "あ" is reachable (1 substitution) but "xyz" is still
   // unreachable (3 substitutions for a 1-cp query = distance 3).
   auto fuzzy = text::FuzzySearch::Search(tree, "ぁ", /*max_distance=*/1,
                                          /*max_words=*/100);
-  ASSERT_EQ(fuzzy.size(), 2u);
+  ASSERT_EQ(fuzzy.key_iterators.size(), 2u);
   // Verify "xyz" is not in results
-  for (const auto &r : fuzzy) {
+  for (const auto &r : fuzzy.key_iterators) {
     EXPECT_NE(r.GetKey()->Str(), "doc:en");
   }
 }
@@ -580,25 +580,25 @@ TEST_F(TextTest, FuzzyMultiByteDistance2) {
   // "munchen" differs by: ü→u (1 substitution). Distance 1 should match.
   auto d1 = text::FuzzySearch::Search(tree, "munchen", /*max_distance=*/1,
                                       /*max_words=*/100);
-  ASSERT_EQ(d1.size(), 1u);
-  EXPECT_EQ(d1[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(d1.key_iterators.size(), 1u);
+  EXPECT_EQ(d1.key_iterators[0].GetKey()->Str(), "doc:1");
 
   // "munchn" differs by: ü→u (1 sub) + deletion of 'e'. Distance 2 matches.
   auto d2_match = text::FuzzySearch::Search(tree, "munchn", /*max_distance=*/2,
                                             /*max_words=*/100);
-  ASSERT_EQ(d2_match.size(), 1u);
-  EXPECT_EQ(d2_match[0].GetKey()->Str(), "doc:1");
+  ASSERT_EQ(d2_match.key_iterators.size(), 1u);
+  EXPECT_EQ(d2_match.key_iterators[0].GetKey()->Str(), "doc:1");
 
   // Same query at distance 1 should NOT match (needs 2 edits).
   auto d1_miss = text::FuzzySearch::Search(tree, "munchn", /*max_distance=*/1,
                                            /*max_words=*/100);
-  EXPECT_EQ(d1_miss.size(), 0u);
+  EXPECT_EQ(d1_miss.key_iterators.size(), 0u);
 
   // "mcn" needs 4 edits from "münchen" (delete ü, delete n, delete h, delete
   // e). Distance 2 should NOT match.
   auto d2_miss = text::FuzzySearch::Search(tree, "mcn", /*max_distance=*/2,
                                            /*max_words=*/100);
-  EXPECT_EQ(d2_miss.size(), 0u);
+  EXPECT_EQ(d2_miss.key_iterators.size(), 0u);
 }
 
 // ==========================================================================

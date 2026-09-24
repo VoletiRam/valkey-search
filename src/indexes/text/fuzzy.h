@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include "absl/container/inlined_vector.h"
 #include "absl/log/check.h"
@@ -27,25 +28,33 @@ using Codepoints = absl::InlinedVector<uint32_t, 32>;
 
 // Fuzzy search using Damerau-Levenshtein distance on RadixTree
 struct FuzzySearch {
-  // Returns KeyIterators for all words within edit distance <= max_distance.
-  // The DP matrix is sized by code point count (not bytes): é→è costs 1 edit.
-  static absl::InlinedVector<Postings::KeyIterator,
-                             kWordExpansionInlineCapacity>
-  Search(const Rax& tree, absl::string_view pattern, size_t max_distance,
-         uint32_t max_words) {
-    absl::InlinedVector<indexes::text::Postings::KeyIterator,
-                        kWordExpansionInlineCapacity>
+  // Matched terms within the edit distance, index-aligned across all three
+  // vectors so scoring can use one matched term's own dt.
+  struct Expansion {
+    absl::InlinedVector<Postings::KeyIterator, kWordExpansionInlineCapacity>
         key_iterators;
+    absl::InlinedVector<uint32_t, kWordExpansionInlineCapacity> per_term_dt;
+    // Used only by the extra-step scoring path, which does per-key LookupKey
+    // instead of forward iteration.
+    absl::InlinedVector<InvasivePtr<Postings>, kWordExpansionInlineCapacity>
+        postings;
+  };
 
-    // Decode pattern to code points so the DP matrix is indexed per character.
-    // The pattern reaches here already well-formed UTF-8. Both entry points
-    // resolve malformed bytes upstream, compat-gated (>= 1.3.0 rejects with
-    // InvalidArgumentError; < 1.3.0 substitutes U+FFFD so the term matches
-    // nothing): client queries via FilterParser::Parse's upfront gate, and
-    // inter-node requests via GRPCPredicateToPredicate in search_converter.cc.
-    // kInvalidCp is therefore unreachable here, and the CHECK is a contract
-    // assertion: if it fires, a caller delivered an unsanitized pattern, which
-    // is a programming error.
+  // Returns matched terms for all words within edit distance <= max_distance.
+  // The DP matrix is sized by code point count (not bytes): é→è costs 1 edit.
+  static Expansion Search(const Rax& tree, absl::string_view pattern,
+                          size_t max_distance, uint32_t max_words) {
+    Expansion result;
+
+    // Decode pattern to code points so the DP matrix is indexed per
+    // character. The pattern reaches here already well-formed UTF-8. Both
+    // entry points resolve malformed bytes upstream, compat-gated (>= 1.3.0
+    // rejects with InvalidArgumentError; < 1.3.0 substitutes U+FFFD so the
+    // term matches nothing): client queries via FilterParser::Parse's upfront
+    // gate, and inter-node requests via GRPCPredicateToPredicate in
+    // search_converter.cc. kInvalidCp is therefore unreachable here, and the
+    // CHECK is a contract assertion: if it fires, a caller delivered an
+    // unsanitized pattern, which is a programming error.
     Codepoints pattern_cps;
     {
       utils::Scanner s(pattern);
@@ -53,7 +62,8 @@ struct FuzzySearch {
       while ((cp = s.NextUtf8()) != utils::Scanner::kEOF) {
         CHECK(cp != utils::Scanner::kInvalidCp)
             << "Fuzzy pattern contained invalid UTF-8 — the filter parser "
-               "should have rejected or substituted it at the query boundary; "
+               "should have rejected or substituted it at the query "
+               "boundary; "
                "this indicates a code path bypass";
         pattern_cps.push_back(cp);
       }
@@ -66,8 +76,9 @@ struct FuzzySearch {
     absl::InlinedVector<size_t, 32> prev(pattern_len + 1);       // Row i-1
     absl::InlinedVector<size_t, 32> curr(pattern_len + 1);       // Row i
 
-    // Initialize first row: distance from empty string to each pattern prefix.
-    // Example: for pattern "race" (4 code points), first row is [0,1,2,3,4]
+    // Initialize first row: distance from empty string to each pattern
+    // prefix. Example: for pattern "race" (4 code points), first row is
+    // [0,1,2,3,4]
     for (size_t i = 0; i <= pattern_len; ++i) {
       prev[i] = i;
     }
@@ -77,8 +88,8 @@ struct FuzzySearch {
     uint32_t word_count = 0;
     SearchRecursive(iter, pattern_cps, max_distance, "", 0 /*prev_tree_cp*/,
                     0 /*new_word_cp_count*/, 0 /*dp_byte_pos*/, prev_prev, prev,
-                    curr, key_iterators, max_words, word_count);
-    return key_iterators;
+                    curr, result, max_words, word_count);
+    return result;
   }
 
  private:
@@ -103,7 +114,8 @@ struct FuzzySearch {
   //   - dp_byte_pos: byte offset in new_word up to which DP has consumed code
   //                  points. Bytes in [dp_byte_pos, new_word.size()) are a
   //                  partial UTF-8 sequence carried across the next edge —
-  //                  required because radix-tree edges may split mid-codepoint.
+  //                  required because radix-tree edges may split
+  //                  mid-codepoint.
   //   - DP matrix columns = pattern_cps.size() + 1
   static void SearchRecursive(
       Rax::PathIterator iter, const Codepoints& pattern_cps,
@@ -118,9 +130,7 @@ struct FuzzySearch {
           prev,  // Row i-1 of DP matrix (previous row)
       absl::InlinedVector<size_t, 32>&
           curr,  // Row i of DP matrix (current row being computed)
-      absl::InlinedVector<indexes::text::Postings::KeyIterator,
-                          kWordExpansionInlineCapacity>& key_iterators,
-      uint32_t max_words, uint32_t& word_count) {
+      Expansion& result, uint32_t max_words, uint32_t& word_count) {
     size_t pattern_len = pattern_cps.size();
 
     // Iterate over children at current tree level
@@ -130,12 +140,12 @@ struct FuzzySearch {
       new_word.append(edge.data(), edge.size());
       size_t edge_word_cp_count = new_word_cp_count;
       size_t edge_dp_byte_pos = dp_byte_pos;
-      // Minimum edit distance in the current DP row after processing the edge.
-      // Used for pruning: if min_dist > max_distance, skip entire subtree.
-      // Initialize from the parent's prev row so an edge containing only
-      // partial UTF-8 bytes (no DP step runs) still admits proper pruning;
-      // for normal edges this initial value is overwritten by the first
-      // DP step.
+      // Minimum edit distance in the current DP row after processing the
+      // edge. Used for pruning: if min_dist > max_distance, skip entire
+      // subtree. Initialize from the parent's prev row so an edge containing
+      // only partial UTF-8 bytes (no DP step runs) still admits proper
+      // pruning; for normal edges this initial value is overwritten by the
+      // first DP step.
       size_t min_dist = *std::min_element(prev.begin(), prev.end());
 
       // SAVE STATE: prev_prev/prev/prev_tree_cp persist across siblings via
@@ -150,7 +160,8 @@ struct FuzzySearch {
         uint8_t b0 = static_cast<uint8_t>(new_word[edge_dp_byte_pos]);
         uint8_t need = utils::Scanner::ExpectedLen(b0);
         if (edge_dp_byte_pos + need > new_word.size()) {
-          break;  // Partial UTF-8 sequence — wait for next edge to complete it.
+          break;  // Partial UTF-8 sequence — wait for next edge to complete
+                  // it.
         }
         uint32_t tree_cp = DecodeAndAdvance(new_word, edge_dp_byte_pos);
         ++edge_word_cp_count;
@@ -194,9 +205,9 @@ struct FuzzySearch {
         prev_tree_cp = tree_cp;
       }
 
-      // Pruning: skip subtree if minimum distance exceeds target edit distance.
-      // Distance can only grow as more code points are appended, so once min
-      // exceeds max no word under this subtree can match.
+      // Pruning: skip subtree if minimum distance exceeds target edit
+      // distance. Distance can only grow as more code points are appended, so
+      // once min exceeds max no word under this subtree can match.
       if (min_dist > max_distance) {
         prev_prev = saved_prev_prev;
         prev = saved_prev;
@@ -208,10 +219,14 @@ struct FuzzySearch {
       // Descend to the child node at the end of this edge
       if (iter.CanDescend()) {
         auto child_iter = iter.DescendNew();
-        // The edit distance is in prev row (after the swap above)
+        // Check if the node has a word and edit distance is within the limit
+        // The edit distance is in prev row now as we did the row swap
+        // in loop above
         if (child_iter.IsWord() && prev[pattern_len] <= max_distance) {
-          key_iterators.emplace_back(
-              child_iter.GetPostingsTarget()->GetKeyIterator());
+          auto postings = child_iter.GetPostingsTarget();
+          result.per_term_dt.push_back(postings->GetKeyCount());
+          result.key_iterators.emplace_back(postings->GetKeyIterator());
+          result.postings.push_back(std::move(postings));
           ++word_count;
           if (word_count >= max_words) {
             return;
@@ -222,8 +237,7 @@ struct FuzzySearch {
         if (child_iter.CanDescend()) {
           SearchRecursive(child_iter, pattern_cps, max_distance, new_word,
                           prev_tree_cp, edge_word_cp_count, edge_dp_byte_pos,
-                          prev_prev, prev, curr, key_iterators, max_words,
-                          word_count);
+                          prev_prev, prev, curr, result, max_words, word_count);
         }
       }
 

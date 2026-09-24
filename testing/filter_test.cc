@@ -1767,6 +1767,84 @@ INSTANTIATE_TEST_SUITE_P(
             .expected_tree_structure =
                 "TEXT-TERM(\"caf\xC3\xA9\", field_mask=3)\n",
         },
+        // =================================================================
+        // Field-scoped text group: @field:(a|b|c) — issue #1214
+        // =================================================================
+        {
+            .test_name = "text_field_group_or",
+            .filter = "@text_field1:(word|missing)",
+            .create_success = true,
+            .evaluate_success = true,  // key1 text_field1 contains "word"
+            .key = "key1",
+            .expected_tree_structure =
+                "OR{\n"
+                "  TEXT-TERM(\"word\", field_mask=1)\n"
+                "  TEXT-TERM(\"missing\", field_mask=1)\n"
+                "}\n",
+        },
+        {
+            .test_name = "text_field_group_single_term",
+            .filter = "@text_field1:(word)",
+            .create_success = true,
+            .evaluate_success = true,
+            .key = "key1",
+            .expected_tree_structure = "TEXT-TERM(\"word\", field_mask=1)\n",
+        },
+        {
+            .test_name = "text_field_group_scopes_field",
+            // Bare terms inside the group are scoped to text_field1 (mask=1),
+            // not all text fields (mask=3).
+            .filter = "@text_field2:(word)",
+            .create_success = true,
+            .evaluate_success = true,
+            .key = "key1",
+            .expected_tree_structure = "TEXT-TERM(\"word\", field_mask=2)\n",
+        },
+        {
+            .test_name = "text_field_group_and",
+            .filter = "@text_field1:(hello name)",
+            .create_success = true,
+            .evaluate_success = true,  // both words present in text_field1
+            .key = "key1",
+            .expected_tree_structure = "AND{\n"
+                                       "  TEXT-TERM(\"hello\", field_mask=1)\n"
+                                       "  TEXT-TERM(\"name\", field_mask=1)\n"
+                                       "}\n",
+        },
+        {
+            // A leading field-scoped group followed by an AND term must stay a
+            // nested subtree, not flatten into one AND (regression for the
+            // no_prev_grp handling in the @field:(...) branch).
+            .test_name = "text_field_group_then_and_term",
+            .filter = "@text_field1:(hello word) @text_field2:name",
+            .create_success = true,
+            .evaluate_success = true,
+            .key = "key1",
+            .expected_tree_structure =
+                "AND{\n"
+                "  AND{\n"
+                "    TEXT-TERM(\"hello\", field_mask=1)\n"
+                "    TEXT-TERM(\"word\", field_mask=1)\n"
+                "  }\n"
+                "  TEXT-TERM(\"name\", field_mask=2)\n"
+                "}\n",
+        },
+        {
+            .test_name = "text_field_group_inner_field_modifier_rejected",
+            // A field modifier inside a field-scoped group is a syntax error,
+            // matching RediSearch.
+            .filter = "@text_field1:(word | @text_field2:hello)",
+            .create_success = false,
+            .create_expected_error_message =
+                "Unexpected character at position 22: `@`",
+        },
+        {
+            .test_name = "text_field_group_empty",
+            .filter = "@text_field1:()",
+            .create_success = false,
+            .create_expected_error_message =
+                "Empty brackets detected at Position: 14",
+        },
     }),
     [](const TestParamInfo<FilterTestCase> &info) {
       return info.param.test_name;
@@ -1803,9 +1881,7 @@ TEST_F(FilterMultiBytePunctuationTest,
 
   // "hello،world" — the parser must consume "hello", skip the multi-byte
   // punctuation atomically (advancing 2 bytes for U+060C, not 1), then parse
-  // "world" cleanly. A 1-byte advance would leave the orphan continuation
-  // byte 0x8C in the stream and emit a corrupted "\x8Cworld" token that
-  // gets mojibake-replaced to "�world" during normalization.
+  // "world" cleanly.
   std::string filter = "hello\xD8\x8Cworld";
   TextParsingOptions options{};
   FilterParser parser(*schema, filter, options);
@@ -1820,13 +1896,10 @@ TEST_F(FilterMultiBytePunctuationTest,
             "}\n");
 }
 
-// The query string is the user-input boundary, so malformed UTF-8 must be
-// tolerated rather than rejected (preserves 1.2 behavior). PeekCodepoint
-// reports Peeked::valid == false for an invalid byte; the token loops consume
-// it as opaque single-byte data and keep parsing. A query ending in a
-// truncated 2-byte lead (0xC3 with no continuation) must parse without error
-// and still produce a usable predicate; the invalid byte simply becomes token
-// content that matches nothing downstream.
+// The query string is the user-input boundary, so malformed UTF-8 must
+// be tolerated rather than rejected (preserves 1.2 behavior).
+// PeekCodepoint reports Peeked::valid == false for an invalid byte; the
+// token loops consume it as opaque single-byte data and keep parsing.
 class FilterMalformedUtf8Test : public ValkeySearchTest {};
 
 TEST_F(FilterMalformedUtf8Test, TruncatedUtf8InQueryToleratedNoError) {
@@ -1848,8 +1921,8 @@ TEST_F(FilterMalformedUtf8Test, TruncatedUtf8InQueryToleratedNoError) {
   VMSDK_EXPECT_OK(schema->AddIndex("text_field1", "text_field1", text_index));
   EXPECT_CALL(*schema, GetIdentifier(testing::_)).Times(testing::AnyNumber());
 
-  // "hello " + lone 0xC3 (truncated 2-byte lead). Parsing must succeed; the
-  // malformed trailing byte is tolerated as opaque token content.
+  // "hello " + lone 0xC3 (truncated 2-byte lead). Parsing must succeed;
+  // the malformed trailing byte is tolerated as opaque token content.
   std::string filter = "hello \xC3";
   TextParsingOptions options{};
   FilterParser parser(*schema, filter, options);
@@ -1858,9 +1931,10 @@ TEST_F(FilterMalformedUtf8Test, TruncatedUtf8InQueryToleratedNoError) {
   EXPECT_NE(parse_results.value().root_predicate, nullptr);
 }
 
-// Malformed UTF-8 at the query boundary is compat-gated (see COMPATIBILITY.md):
-// emulate-release >= 1.3.0 rejects with InvalidArgumentError (matching the
-// ingestion path), while < 1.3.0 preserves the legacy 1.2 tolerate behavior.
+// Malformed UTF-8 at the query boundary is compat-gated (see
+// COMPATIBILITY.md): emulate-release >= 1.3.0 rejects with
+// InvalidArgumentError (matching the ingestion path), while < 1.3.0
+// preserves the legacy 1.2 tolerate behavior.
 class FilterMalformedUtf8CompatTest : public ValkeySearchTest {
  protected:
   void SetUp() override {
@@ -1921,9 +1995,10 @@ TEST_F(FilterMalformedUtf8CompatTest, ToleratesWhenEmulatingLegacyRelease) {
   ASSERT_TRUE(parse_results.ok()) << parse_results.status().message();
   ASSERT_NE(parse_results.value().root_predicate, nullptr);
 
-  // Legacy behavior must not just succeed — the malformed byte 0xC3 must have
-  // been replaced with U+FFFD (EF BF BD), so the resulting term matches nothing
-  // rather than carrying raw invalid bytes downstream.
+  // Legacy behavior must not just succeed — the malformed byte 0xC3
+  // must have been replaced with U+FFFD (EF BF BD), so the resulting
+  // term matches nothing rather than carrying raw invalid bytes
+  // downstream.
   std::string tree =
       PrintPredicateTree(parse_results.value().root_predicate.get());
   EXPECT_NE(tree.find("\xEF\xBF\xBD"), std::string::npos)
